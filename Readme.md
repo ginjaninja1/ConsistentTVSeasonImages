@@ -1,4 +1,4 @@
-# EmbyTemplatev2
+# ConsistentTVSeasonImages
 
 A standardized, automation-ready repository template for rapidly scaffolding Emby Server plugins. 
 
