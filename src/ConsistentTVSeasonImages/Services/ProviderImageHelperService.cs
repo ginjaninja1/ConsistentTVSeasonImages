@@ -31,7 +31,7 @@ namespace ConsistentTVSeasonImages.Services
     public sealed class DiscoverRequest : IReturn<List<ShowResult>> { public string Filter { get; set; } public string Search { get; set; } }
     [Route("/ProviderImageHelper/Fetch", "GET")]
     [Authenticated(Roles = "admin")]
-    public sealed class FetchRequest : IReturn<FetchResult> { public string SeriesId { get; set; } public bool IncludeAllLanguages { get; set; } }
+    public sealed class FetchRequest : IReturn<FetchResult> { public string SeriesId { get; set; } public string SeasonId { get; set; } public bool IncludeAllLanguages { get; set; } }
     [Route("/ProviderImageHelper/Apply", "POST")]
     [Authenticated(Roles = "admin")]
     public sealed class ApplyRequest : IReturn<ApplyResult> { public string SeasonId { get; set; } public string ImageType { get; set; } public string ImageUrl { get; set; } public string SourceItemId { get; set; } }
@@ -42,7 +42,8 @@ namespace ConsistentTVSeasonImages.Services
     [Authenticated(Roles = "admin")]
     public sealed class ClearCacheRequest : IReturn<ClearCacheResult> { }
 
-    public sealed class ShowResult { public string Id { get; set; } public string Name { get; set; } public bool MissingPoster { get; set; } public bool MissingPosterIncludingSpecials { get; set; } public bool MissingBanner { get; set; } public bool MissingBannerIncludingSpecials { get; set; } }
+    public sealed class ShowResult { public string Id { get; set; } public string Name { get; set; } public bool MissingPoster { get; set; } public bool MissingPosterIncludingSpecials { get; set; } public bool MissingBanner { get; set; } public bool MissingBannerIncludingSpecials { get; set; } public List<SeasonSummary> Seasons { get; set; } }
+    public sealed class SeasonSummary { public string Id { get; set; } public string Name { get; set; } public int? Number { get; set; } public bool CurrentPoster { get; set; } public bool CurrentBanner { get; set; } public string CurrentPosterTag { get; set; } public string CurrentBannerTag { get; set; } }
     public sealed class ImageResult { public string Url { get; set; } public string ThumbnailUrl { get; set; } public string Type { get; set; } public string Provider { get; set; } public int? Width { get; set; } public int? Height { get; set; } }
     public sealed class ProviderDiagnostic { public string Provider { get; set; } public string Status { get; set; } public string Message { get; set; } public bool SupportsPosters { get; set; } public bool SupportsBanners { get; set; } public int PosterCount { get; set; } public int BannerCount { get; set; } public int Attempts { get; set; } public bool UsedStaleCache { get; set; } public double? StaleCacheAgeHours { get; set; } public int? RetryAfterSeconds { get; set; } }
     public sealed class SeasonResult { public string Id { get; set; } public string Name { get; set; } public int? Number { get; set; } public string CurrentPoster { get; set; } public string CurrentBanner { get; set; } public string CurrentPosterItemId { get; set; } public string CurrentBannerItemId { get; set; } public string CurrentPosterTag { get; set; } public string CurrentBannerTag { get; set; } public List<ImageResult> Posters { get; set; } public List<ImageResult> Banners { get; set; } public List<ProviderDiagnostic> ProviderDiagnostics { get; set; } }
@@ -62,7 +63,7 @@ namespace ConsistentTVSeasonImages.Services
         private const int MaximumProviderAttempts = 3;
         private readonly ILibraryManager library; private readonly IProviderManager providers; private readonly IFileSystem fileSystem; private readonly IImageProcessor imageProcessor; private readonly IServerConfigurationManager configuration; private readonly IJsonSerializer json; private readonly ILogger logger; private readonly string cachePath;
         public ProviderImageHelperService(ILibraryManager library, IProviderManager providers, IFileSystem fileSystem, IImageProcessor imageProcessor, IServerConfigurationManager configuration, IApplicationPaths applicationPaths, IJsonSerializer json, ILogManager logs)
-        { this.library = library; this.providers = providers; this.fileSystem = fileSystem; this.imageProcessor = imageProcessor; this.configuration = configuration; this.json = json; cachePath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "provider-images"); logger = Plugin.Logger ?? logs.GetLogger("Consistent TV Season Images"); logger.Debug("ProviderImageHelperService instantiated. Provider cache={0}, LifetimeHours={1}", cachePath, CacheLifetime.TotalHours); }
+        { this.library = library; this.providers = providers; this.fileSystem = fileSystem; this.imageProcessor = imageProcessor; this.configuration = configuration; this.json = json; cachePath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "provider-images"); logger = Plugin.Logger ?? logs.GetLogger("Consistent TV Season Images"); }
 
         public object Get(DiscoverRequest request)
         {
@@ -85,7 +86,8 @@ namespace ConsistentTVSeasonImages.Services
                             MissingPoster = regularSeasons.Any(x => !x.HasImage(ImageType.Primary, 0)),
                             MissingPosterIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Primary, 0)),
                             MissingBanner = regularSeasons.Any(x => !x.HasImage(ImageType.Banner, 0)),
-                            MissingBannerIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Banner, 0))
+                            MissingBannerIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Banner, 0)),
+                            Seasons = seasons.OrderBy(x => x.IndexNumber).Select(x => new SeasonSummary { Id = x.GetClientId(), Name = x.Name, Number = x.IndexNumber, CurrentPoster = x.HasImage(ImageType.Primary, 0), CurrentBanner = x.HasImage(ImageType.Banner, 0), CurrentPosterTag = ImageTag(x, ImageType.Primary), CurrentBannerTag = ImageTag(x, ImageType.Banner) }).ToList()
                         };
                     })
                     .Where(s => filter == "all"
@@ -108,7 +110,8 @@ namespace ConsistentTVSeasonImages.Services
             try
             {
                 var series = library.GetItemById(request.SeriesId) as Series; if (series == null) throw new ArgumentException("Series not found.");
-                var seasons = GetSeasons(series).OrderBy(s => s.IndexNumber).ToArray();
+                var seasons = GetSeasons(series).Where(s => string.IsNullOrEmpty(request.SeasonId) || string.Equals(s.GetClientId(), request.SeasonId, StringComparison.OrdinalIgnoreCase)).OrderBy(s => s.IndexNumber).ToArray();
+                if (!string.IsNullOrEmpty(request.SeasonId) && seasons.Length == 0) throw new ArgumentException("Season not found in series.");
                 logger.Debug("Fetch resolved series. Name={0}, Path={1}, Seasons={2}, ProviderIds={3}", series.Name, series.Path ?? "(null)", seasons.Length, string.Join(",", series.ProviderIds.Select(x => x.Key + "=" + x.Value)));
                 LogAvailableProviders("Series", series);
                 var result = new FetchResult { SeriesId = request.SeriesId, Name = series.Name, CorrelationId = correlationId, Seasons = new List<SeasonResult>() };

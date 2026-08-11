@@ -9,11 +9,13 @@ using MediaBrowser.Model.Serialization;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 namespace ConsistentTVSeasonImages
 {
     public class Plugin : BasePlugin<PluginConfiguration>, IHasThumbImage, IHasWebPages
     {
+        private static int webResourcesLogged;
         public Plugin(IServerApplicationHost host, ILogManager logs)
             : base(host.Resolve<IApplicationPaths>(), host.Resolve<IXmlSerializer>())
         {
@@ -32,7 +34,8 @@ namespace ConsistentTVSeasonImages
 
         public IEnumerable<PluginPageInfo> GetPages()
         {
-            Logger.Debug("Registering web resources ProviderImageHelper and ProviderImageHelperJs.");
+            if (Interlocked.Exchange(ref webResourcesLogged, 1) == 0)
+                Logger.Debug("Web resources available: ProviderImageHelper (page) and ProviderImageHelperJs (controller). Emby may enumerate these resources multiple times during startup.");
             return new[]
             {
                 new PluginPageInfo
