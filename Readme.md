@@ -3,6 +3,10 @@
 A standardized, automation-ready repository template for rapidly scaffolding Emby Server plugins. 
 
 ## Features
+
+- Uses each library's preferred image language by default (while retaining language-neutral artwork).
+- Caches provider image metadata for 30 days; use **Clear provider cache** to force a fresh fetch.
+- Logs total, season, and individual provider timings together with cache hit/miss counts.
 * **Zero-Configuration Scaffolding**: Uses automated GitHub Actions to rename namespaces, solution files, and projects instantly upon repository creation.
 * **.gitignore prepopulated**: To ensure obj, bin and .vs folders are excluded from repository
 * **setup.bat**: instantiates a pre-commit in `.git/hooks/` so any commit with "[bump]" at the END of description increases the the version number in .csproj.

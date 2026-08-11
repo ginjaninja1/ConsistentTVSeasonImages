@@ -1,92 +1,52 @@
-﻿using MediaBrowser.Common;
+using ConsistentTVSeasonImages.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Controller;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Logging;
-using MediaBrowser.Model.Plugins.UI;
+using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
-using ConsistentTVSeasonImages.Configuration;
-using ConsistentTVSeasonImages.UI;
 using System;
 using System.Collections.Generic;
-using System.IO; 
+using System.IO;
 
 namespace ConsistentTVSeasonImages
 {
-    public class Plugin : BasePlugin<PluginConfiguration>, IHasThumbImage, IHasUIPages
+    public class Plugin : BasePlugin<PluginConfiguration>, IHasThumbImage, IHasWebPages
     {
-        private readonly IServerApplicationHost applicationHost;
-        private readonly ILogger logger;
-
-        private List<IPluginUIPageController> pages;
-
-
-        public Plugin(
-            IServerApplicationHost applicationHost,
-            ILogManager logManager)
-            : base(
-                applicationHost.Resolve<IApplicationPaths>(),
-                applicationHost.Resolve<IXmlSerializer>())
+        public Plugin(IServerApplicationHost host, ILogManager logs)
+            : base(host.Resolve<IApplicationPaths>(), host.Resolve<IXmlSerializer>())
         {
-            this.applicationHost = applicationHost;
-
-            // Create the plugin logger once.
-            this.logger = logManager.GetLogger(this.Name);
-
             Instance = this;
+            Logger = logs.GetLogger(Name);
+            Logger.Info("Plugin {0} version {1} initialized. Assembly: {2}", Name, GetType().Assembly.GetName().Version, GetType().Assembly.FullName);
         }
 
-
-        /// <summary>
-        /// Gets the running instance of this plugin. Configuration is
-        /// accessed via Instance.Configuration / SaveConfiguration() /
-        /// UpdateConfiguration() - inherited from BasePlugin&lt;T&gt;, no
-        /// custom store needed.
-        /// </summary>
         public static Plugin Instance { get; private set; }
+        public static ILogger Logger { get; private set; }
+        public override string Description => "Discovers, compares and applies consistent poster and banner artwork across TV seasons.";
+        public override Guid Id => new Guid("19272eb3-a556-4ae3-80b2-ce78f8ce7958");
+        public override string Name => "Consistent TV Season Images";
+        public ImageFormat ThumbImageFormat => ImageFormat.Png;
+        public Stream GetThumbImage() => GetType().Assembly.GetManifestResourceStream(GetType().Namespace + ".thumb.png");
 
-
-        public override string Description =>
-            "Copies poster.ext to folder.ext for movies and TV shows that are missing a folder image.";
-
-
-        public override Guid Id =>
-            new Guid("19272eb3-a556-4ae3-80b2-ce78f8ce7958");
-
-
-        public override string Name =>
-            "Poster To Folder";
-
-
-        public ImageFormat ThumbImageFormat =>
-            ImageFormat.Png;
-
-
-        public Stream GetThumbImage()
-            => this.GetType()
-                .Assembly
-                .GetManifestResourceStream(
-                    this.GetType().Namespace + ".thumb.png");
-
-
-        public IReadOnlyCollection<IPluginUIPageController> UIPageControllers
+        public IEnumerable<PluginPageInfo> GetPages()
         {
-            get
+            Logger.Info("Registering web resources ProviderImageHelper and ProviderImageHelperJs.");
+            return new[]
             {
-                if (this.pages == null)
+                new PluginPageInfo
                 {
-                    this.pages = new List<IPluginUIPageController>();
-
-                    this.pages.Add(
-                        new MainPageController(
-                            this.GetPluginInfo(),
-                            this.applicationHost,
-                            this.logger));
+                    Name = "ProviderImageHelper",
+                    EmbeddedResourcePath = GetType().Namespace + ".Web.ProviderImageHelper.html",
+                    EnableInMainMenu = true
+                },
+                new PluginPageInfo
+                {
+                    Name = "ProviderImageHelperJs",
+                    EmbeddedResourcePath = GetType().Namespace + ".Web.ProviderImageHelper.js"
                 }
-
-                return this.pages.AsReadOnly();
-            }
+            };
         }
     }
 }
