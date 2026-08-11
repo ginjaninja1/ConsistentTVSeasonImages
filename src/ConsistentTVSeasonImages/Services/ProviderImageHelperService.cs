@@ -71,7 +71,7 @@ namespace ConsistentTVSeasonImages.Services
     public sealed class ClearCacheResult { public bool Success { get; set; } public int FilesRemoved { get; set; } }
     public sealed class IgnoreResult { public bool Success { get; set; } public bool Ignored { get; set; } }
     public sealed class AvailabilityStatus { public bool Ready { get; set; } public bool Building { get; set; } public double Progress { get; set; } public int AvailableShows { get; set; } public int AvailablePosterShows { get; set; } public int AvailableBannerShows { get; set; } public DateTime? CreatedUtc { get; set; } }
-    public sealed class SettingsResult { public string NotifyWhenAvailable { get; set; } }
+    public sealed class SettingsResult { public string NotifyWhenAvailable { get; set; } public int AvailabilityCacheDays { get; set; } }
     public sealed class AvailabilityCache { public int Version { get; set; } public DateTime CreatedUtc { get; set; } public List<string> SeriesIds { get; set; } = new List<string>(); public List<AvailabilityOpportunity> Entries { get; set; } = new List<AvailabilityOpportunity>(); }
     public sealed class AvailabilitySeason { public string SeasonId { get; set; } public bool Poster { get; set; } public bool Banner { get; set; } }
     public sealed class AvailabilityOpportunity { public string SeriesId { get; set; } public string SeriesName { get; set; } public bool Poster { get; set; } public bool Banner { get; set; } public DateTime NextRefreshUtc { get; set; } public List<AvailabilitySeason> Seasons { get; set; } = new List<AvailabilitySeason>(); }
@@ -146,13 +146,13 @@ namespace ConsistentTVSeasonImages.Services
             logger.Info("Availability cache counts. PosterOnly={0}, BannerOnly={1}, Both={2}, PosterTotal={3}, BannerTotal={4}, Either={5}, CachedShows={6}", posterOnly, bannerOnly, both, posterTotal, bannerTotal, either, entries.Count);
             lock (AvailabilitySync) return new AvailabilityStatus { Ready = cache != null && cache.Version == AvailabilityCacheVersion, Building = availabilityBuilding, Progress = availabilityProgress, AvailableShows = either, AvailablePosterShows = posterTotal, AvailableBannerShows = bannerTotal, CreatedUtc = cache?.CreatedUtc };
         }
-        public object Get(SettingsRequest request) { return new SettingsResult { NotifyWhenAvailable = NormalizeNotificationPreference(Plugin.Instance.Configuration.NotifyWhenAvailable) }; }
+        public object Get(SettingsRequest request) { return new SettingsResult { NotifyWhenAvailable = NormalizeNotificationPreference(Plugin.Instance.Configuration.NotifyWhenAvailable), AvailabilityCacheDays = (int)AvailabilityLifetime.TotalDays }; }
 
         public object Post(SettingsRequest request)
         {
             Plugin.Instance.Configuration.NotifyWhenAvailable = NormalizeNotificationPreference(request.NotifyWhenAvailable);
             Plugin.Instance.SaveConfiguration(); logger.Info("Availability notification preference changed. Value={0}", Plugin.Instance.Configuration.NotifyWhenAvailable);
-            return new SettingsResult { NotifyWhenAvailable = Plugin.Instance.Configuration.NotifyWhenAvailable };
+            return new SettingsResult { NotifyWhenAvailable = Plugin.Instance.Configuration.NotifyWhenAvailable, AvailabilityCacheDays = (int)AvailabilityLifetime.TotalDays };
         }
 
         public object Post(IgnoreRequest request)
