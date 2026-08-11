@@ -34,6 +34,9 @@ namespace ConsistentTVSeasonImages.Services
     [Route("/ProviderImageHelper/Apply", "POST")]
     [Authenticated(Roles = "admin")]
     public sealed class ApplyRequest : IReturn<ApplyResult> { public string SeasonId { get; set; } public string ImageType { get; set; } public string ImageUrl { get; set; } public string SourceItemId { get; set; } }
+    [Route("/ProviderImageHelper/Image", "DELETE")]
+    [Authenticated(Roles = "admin")]
+    public sealed class RemoveImageRequest : IReturn<ApplyResult> { public string SeasonId { get; set; } public string ImageType { get; set; } }
     [Route("/ProviderImageHelper/Cache", "DELETE")]
     [Authenticated(Roles = "admin")]
     public sealed class ClearCacheRequest : IReturn<ClearCacheResult> { }
@@ -49,11 +52,11 @@ namespace ConsistentTVSeasonImages.Services
 
     public sealed class ProviderImageHelperService : IService
     {
-        private static readonly TimeSpan CacheLifetime = TimeSpan.FromDays(30);
+        private static readonly TimeSpan CacheLifetime = TimeSpan.FromHours(1);
         private static readonly SemaphoreSlim CacheLock = new SemaphoreSlim(1, 1);
         private readonly ILibraryManager library; private readonly IProviderManager providers; private readonly IFileSystem fileSystem; private readonly IImageProcessor imageProcessor; private readonly IServerConfigurationManager configuration; private readonly IJsonSerializer json; private readonly ILogger logger; private readonly string cachePath;
         public ProviderImageHelperService(ILibraryManager library, IProviderManager providers, IFileSystem fileSystem, IImageProcessor imageProcessor, IServerConfigurationManager configuration, IApplicationPaths applicationPaths, IJsonSerializer json, ILogManager logs)
-        { this.library = library; this.providers = providers; this.fileSystem = fileSystem; this.imageProcessor = imageProcessor; this.configuration = configuration; this.json = json; cachePath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "provider-images"); logger = Plugin.Logger ?? logs.GetLogger("Consistent TV Season Images"); logger.Info("ProviderImageHelperService instantiated. Provider cache={0}, LifetimeDays={1}", cachePath, CacheLifetime.TotalDays); }
+        { this.library = library; this.providers = providers; this.fileSystem = fileSystem; this.imageProcessor = imageProcessor; this.configuration = configuration; this.json = json; cachePath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "provider-images"); logger = Plugin.Logger ?? logs.GetLogger("Consistent TV Season Images"); logger.Info("ProviderImageHelperService instantiated. Provider cache={0}, LifetimeHours={1}", cachePath, CacheLifetime.TotalHours); }
 
         public object Get(DiscoverRequest request)
         {
@@ -115,6 +118,25 @@ namespace ConsistentTVSeasonImages.Services
             logger.Info("Apply started. SeasonId={0}, ImageType={1}, Url={2}, SourceItemId={3}", request.SeasonId, request.ImageType, request.ImageUrl ?? "(null)", request.SourceItemId ?? "(null)");
             try { var season = library.GetItemById(request.SeasonId) as Season; if (season == null) throw new ArgumentException("Season not found."); ImageType type; var name = request.ImageType == "Poster" ? "Primary" : request.ImageType; if (!Enum.TryParse(name, true, out type) || type != ImageType.Primary && type != ImageType.Banner) throw new ArgumentException("ImageType must be Poster or Banner."); var source = request.ImageUrl; if (!string.IsNullOrEmpty(request.SourceItemId)) { var sourceItem = library.GetItemById(request.SourceItemId); var sourceInfo = sourceItem?.GetImageInfo(type, 0); if (sourceInfo == null || string.IsNullOrEmpty(sourceInfo.Path) || !fileSystem.FileExists(sourceInfo.Path)) throw new ArgumentException("The selected current source image is unavailable."); source = sourceInfo.Path; logger.Info("Apply resolved local current source. SourceItem={0}, Type={1}, Path={2}", sourceItem.Name, type, source); } else { Uri uri; if (!Uri.TryCreate(source, UriKind.Absolute, out uri) || uri.Scheme != "https" && uri.Scheme != "http") throw new ArgumentException("A valid HTTP(S) image URL is required."); } await providers.SaveImage(season, library.GetLibraryOptions(season), source, type, 0, new long[0], new DirectoryService(logger, fileSystem), true, CancellationToken.None).ConfigureAwait(false); season.UpdateToRepository(ItemUpdateType.ImageUpdate); logger.Info("Apply completed. Season={0}, Id={1}, ImageType={2}", season.Name, request.SeasonId, type); return new ApplyResult { Success = true, SeasonId = request.SeasonId, ImageType = request.ImageType }; }
             catch (Exception ex) { logger.ErrorException("Apply failed. SeasonId={0}, ImageType={1}, Url={2}", ex, request.SeasonId, request.ImageType, request.ImageUrl); throw; }
+        }
+
+        public object Delete(RemoveImageRequest request)
+        {
+            logger.Info("Remove image started. SeasonId={0}, ImageType={1}", request.SeasonId, request.ImageType);
+            try
+            {
+                var season = library.GetItemById(request.SeasonId) as Season;
+                if (season == null) throw new ArgumentException("Season not found.");
+                ImageType type;
+                var name = request.ImageType == "Poster" ? "Primary" : request.ImageType;
+                if (!Enum.TryParse(name, true, out type) || type != ImageType.Primary && type != ImageType.Banner) throw new ArgumentException("ImageType must be Poster or Banner.");
+                if (!season.HasImage(type, 0)) throw new ArgumentException("The selected current image no longer exists.");
+                season.DeleteImage(type, 0);
+                season.UpdateToRepository(ItemUpdateType.ImageUpdate);
+                logger.Info("Remove image completed. Season={0}, Id={1}, ImageType={2}", season.Name, request.SeasonId, type);
+                return new ApplyResult { Success = true, SeasonId = request.SeasonId, ImageType = request.ImageType };
+            }
+            catch (Exception ex) { logger.ErrorException("Remove image failed. SeasonId={0}, ImageType={1}", ex, request.SeasonId, request.ImageType); throw; }
         }
 
         public object Delete(ClearCacheRequest request)

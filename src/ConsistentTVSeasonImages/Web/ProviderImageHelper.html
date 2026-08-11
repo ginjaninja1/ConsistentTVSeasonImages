@@ -6,9 +6,13 @@
 .ctsi-page-active .skinHeader{background:var(--theme-background,#fff)!important;opacity:1!important;z-index:999!important}
 #ctsiPage .ctsi-main-head{position:static;padding:.25em 0;background:transparent;z-index:auto}
 #ctsiPage .ctsi-search-label{display:flex;flex-direction:column;position:relative}
-#ctsiPage .ctsi-search-title{display:flex;align-items:center;justify-content:space-between}
-#ctsiPage .ctsi-search-label>input{width:100%;box-sizing:border-box}
-#ctsiPage .ctsi-search-clear{position:static;transform:none;border:0;background:transparent;color:inherit;font-size:1.15em;cursor:pointer;line-height:1;padding:0 .2em}
+#ctsiPage .ctsi-search-title{display:block}
+#ctsiPage .ctsi-search-input{position:relative}
+#ctsiPage .ctsi-search-input>.inputLabel{display:none!important}
+#ctsiPage .ctsi-search-input>input{width:100%;box-sizing:border-box;padding-right:2.5em!important}
+#ctsiPage .ctsi-search-handle{position:absolute;right:.15em;top:50%;transform:translateY(-50%);width:2em;height:2em;padding:0;border:0;background:transparent;color:inherit;cursor:pointer}
+#ctsiPage .ctsi-search-handle:after{content:"";display:block;width:7px;height:7px;margin:-4px auto 0;border:0 solid currentColor;border-right-width:1.5px;border-bottom-width:1.5px;transform:rotate(45deg)}
+#ctsiPage .ctsi-search-clear{display:none}
 #ctsiPage .ctsi-search-results{position:absolute;top:100%;left:0;right:0;z-index:30;max-height:18em;overflow-y:auto;background:var(--theme-background,#fff);border:1px solid #777;box-shadow:0 4px 10px #0005}
 #ctsiPage .ctsi-search-results[hidden]{display:none}
 #ctsiPage .ctsi-search-result{display:block;width:100%;border:0;background:transparent;color:inherit;text-align:left;padding:.55em .7em;cursor:pointer}
@@ -18,7 +22,10 @@
 #ctsiPage.ctsi-hide-labels .ctsi-meta{background:transparent;padding:0;text-shadow:none;pointer-events:none}
 #ctsiPage.ctsi-hide-labels .ctsi-meta-text{display:none}
 #ctsiPage.ctsi-hide-labels .ctsi-now{pointer-events:auto}
+#ctsiPage.ctsi-hide-labels .ctsi-remove-current{pointer-events:auto}
 #ctsiPage .ctsi-card .ctsi-meta>.ctsi-now{right:0;bottom:calc(100% + 3px)}
+#ctsiPage .ctsi-card .ctsi-meta>.ctsi-remove-current{right:3px;bottom:calc(100% + 3px);border-radius:4px;padding:.35em .55em;background:#b00020;font-size:.7em}
+#ctsiPage .ctsi-card .ctsi-meta>.ctsi-remove-current:hover,#ctsiPage .ctsi-card .ctsi-meta>.ctsi-remove-current:focus{background:#800018}
 #ctsiPage .ctsi-new{width:34px}
 #ctsiPage .ctsi-slot-wrap.ctsi-new{width:34px;min-width:34px;max-width:34px;flex:0 0 34px}
 #ctsiPage .ctsi-slot-wrap{width:135px}
@@ -43,14 +50,14 @@
 #ctsiPage .ctsi-panes{width:100%;min-width:0}
 #ctsiPage .ctsi-pane{flex:1 0 620px;min-width:620px}
 #ctsiPage .ctsi-lane{width:100%;min-width:0}
-#ctsiPage .ctsi-pool{flex:1 1 180px;min-width:0;max-width:100%}
-#ctsiPage .ctsi-pane-controls{display:flex;align-items:center;gap:.3em;margin-left:auto}.ctsi-pane-controls button{width:28px;height:25px;padding:0;font-size:1.1em}.ctsi-pane-count{font-size:.78em;color:#bbb}
+#ctsiPage .ctsi-pool{flex:1 1 180px;align-self:stretch;min-width:0;max-width:100%;box-sizing:border-box}
+#ctsiPage .ctsi-pane-controls{display:flex;align-items:center;justify-content:flex-start;gap:.3em;margin-left:0}.ctsi-pane-controls button{width:28px;height:25px;padding:0;font-size:1.1em}.ctsi-pane-count{font-size:.78em;color:#bbb}
 #ctsiPage .ctsi-status{min-height:1.5em;margin-top:.7em;color:#bbb}
 #ctsiPage.ctsi-loading #ctsiLoad{opacity:.65;cursor:wait}
 </style>
 <div is="emby-scroller" data-horizontal="false" data-forcescrollbar="true" class="viewScroller scrollFrameY flex flex-grow">
 <div class="scrollSlider flex-grow padded-left padded-left-page padded-right padded-top-page padded-bottom-page content">
-<div class="ctsi-toolbar"><label>Discovery filter<select is="emby-select" id="ctsiFilter"><option value="all">All Shows</option><option value="missingposters">Shows with Missing Posters</option><option value="missingbanners">Shows with Missing Banners</option></select></label><label class="ctsi-search-label"><span class="ctsi-search-title">Find a show<button type="button" id="ctsiSearchClear" class="ctsi-search-clear" title="Clear show search" aria-label="Clear show search">×</button></span><input is="emby-input" id="ctsiSearch" autocomplete="off"><span id="ctsiShows" class="ctsi-search-results" hidden></span></label><label>Layout<select is="emby-select" id="ctsiLayout"><option value="both">Show Both</option><option value="poster">Show Posters Only</option><option value="banner">Show Banners Only</option></select></label><label><input type="checkbox" id="ctsiAllLanguages"> Enable all languages</label><button is="emby-button" id="ctsiLoad" class="raised button-submit">Load show</button><button is="emby-button" id="ctsiLabels" class="raised">Show image labels</button><button is="emby-button" id="ctsiClearCache" class="raised">Clear provider cache</button></div>
+<div class="ctsi-toolbar"><label>Discovery filter<select is="emby-select" id="ctsiFilter"><option value="all">All Shows</option><option value="missingposters">Shows with Missing Posters</option><option value="missingbanners">Shows with Missing Banners</option></select></label><label class="ctsi-search-label"><span class="ctsi-search-title">Find a show<button type="button" id="ctsiSearchClear" class="ctsi-search-clear" title="Clear show search" aria-label="Clear show search">×</button></span><span class="ctsi-search-input"><input is="emby-input" id="ctsiSearch" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="ctsiShows"><button type="button" id="ctsiSearchHandle" class="ctsi-search-handle" title="Choose a show" aria-label="Choose a show" aria-controls="ctsiShows" aria-expanded="false"></button></span><span id="ctsiShows" class="ctsi-search-results" role="listbox" hidden></span></label><label>Layout<select is="emby-select" id="ctsiLayout"><option value="both">Show Both</option><option value="poster">Show Posters Only</option><option value="banner">Show Banners Only</option></select></label><label><input type="checkbox" id="ctsiAllLanguages"> Enable all languages</label><button is="emby-button" id="ctsiLoad" class="raised button-submit">Load show</button><button is="emby-button" id="ctsiLabels" class="raised">Show image labels</button><button is="emby-button" id="ctsiClearCache" class="raised">Clear provider cache</button></div>
 <div id="ctsiStatus" class="ctsi-status" role="status" aria-live="polite"></div>
 <div id="ctsiWork" class="ctsi-work"></div>
 </div></div></div>
