@@ -6,6 +6,7 @@ A standardized, automation-ready repository template for rapidly scaffolding Emb
 
 - Uses each library's preferred image language by default (while retaining language-neutral artwork).
 - Caches provider image metadata for 1 hour; use **Clear provider cache** to force a fresh fetch.
+- Reports partial provider failures in the image pools, retries transient failures with backoff, and can fall back to stale cached metadata.
 - Logs total, season, and individual provider timings together with cache hit/miss counts.
 * **Zero-Configuration Scaffolding**: Uses automated GitHub Actions to rename namespaces, solution files, and projects instantly upon repository creation.
 * **.gitignore prepopulated**: To ensure obj, bin and .vs folders are excluded from repository
