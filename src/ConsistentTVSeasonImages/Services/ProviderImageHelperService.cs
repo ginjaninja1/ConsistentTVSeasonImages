@@ -200,19 +200,6 @@ namespace ConsistentTVSeasonImages.Services
             return result;
         }
 
-        private static bool HasNewLiveProviderType(AvailabilityOpportunity current, AvailabilityOpportunity previous, IEnumerable<Season> seasons, bool poster)
-        {
-            var old = (previous?.Seasons ?? new List<AvailabilitySeason>()).ToDictionary(x => x.SeasonId, StringComparer.OrdinalIgnoreCase);
-            var now = (current?.Seasons ?? new List<AvailabilitySeason>()).ToDictionary(x => x.SeasonId, StringComparer.OrdinalIgnoreCase);
-            foreach (var season in seasons)
-            {
-                AvailabilitySeason currentSeason; AvailabilitySeason previousSeason; if (!now.TryGetValue(season.GetClientId(), out currentSeason)) continue; old.TryGetValue(season.GetClientId(), out previousSeason);
-                if (poster && currentSeason.Poster && previousSeason?.Poster != true && !season.HasImage(ImageType.Primary, 0)) return true;
-                if (!poster && currentSeason.Banner && previousSeason?.Banner != true && !season.HasImage(ImageType.Banner, 0)) return true;
-            }
-            return false;
-        }
-
         public async Task BuildAvailabilityCache(CancellationToken cancellationToken, IProgress<double> progress)
         {
             lock (AvailabilitySync) { if (availabilityBuilding) return; availabilityBuilding = true; availabilityProgress = 0; }
@@ -269,20 +256,22 @@ namespace ConsistentTVSeasonImages.Services
                     catch (Exception ex) { failures.Add(id); logger.ErrorException("Availability cache show failed and will be retried. Show={0}, Id={1}", ex, series[i].Name, id); }
                 }
                 if (failures.Count > 0) throw new IOException("Availability scan retained its checkpoint but could not complete " + failures.Count + " show(s). They will be retried on the next run.");
-                var finalCache = new AvailabilityCache { Version = AvailabilityCacheVersion, CreatedUtc = DateTime.UtcNow, Entries = work.Opportunities.ToList(), SeriesIds = work.Opportunities.Where(x => x.Poster || x.Banner).Select(x => x.SeriesId).Distinct(StringComparer.OrdinalIgnoreCase).ToList() };
-                WriteJsonAtomically(availabilityPath, finalCache);
                 var preference = NormalizeNotificationPreference(Plugin.Instance.Configuration.NotifyWhenAvailable);
+                var posterShows = 0; var bannerShows = 0;
                 foreach (var opportunity in work.Opportunities)
                 {
-                    var previous = priorCache?.Entries?.FirstOrDefault(x => string.Equals(x.SeriesId, opportunity.SeriesId, StringComparison.OrdinalIgnoreCase));
                     var item = library.GetItemById(opportunity.SeriesId) as Series; if (item == null) continue;
                     var currentSeasons = GetSeasons(item);
-                    if (HasNewLiveProviderType(opportunity, previous, currentSeasons, true)) { if (preference == "All" || preference == "Posters") await SendTransientAdminToast("New Season images available for show " + opportunity.SeriesName, cancellationToken).ConfigureAwait(false); else logger.Info("Availability notification skipped by preference. Type=Poster, Show={0}, Preference={1}", opportunity.SeriesName, preference); }
-                    if (HasNewLiveProviderType(opportunity, previous, currentSeasons, false)) { if (preference == "All" || preference == "Banners") await SendTransientAdminToast("New Banner images available for show " + opportunity.SeriesName, cancellationToken).ConfigureAwait(false); else logger.Info("Availability notification skipped by preference. Type=Banner, Show={0}, Preference={1}", opportunity.SeriesName, preference); }
+                    var live = GetLiveAvailability(opportunity, currentSeasons);
+                    if (live.Poster) posterShows++; if (live.Banner) bannerShows++;
+                    if (live.Poster) { if (preference == "All" || preference == "Posters") await SendTransientAdminToast("Season poster images available for show " + opportunity.SeriesName, cancellationToken).ConfigureAwait(false); else logger.Info("Availability notification skipped by preference. Type=Poster, Show={0}, Preference={1}", opportunity.SeriesName, preference); }
+                    if (live.Banner) { if (preference == "All" || preference == "Banners") await SendTransientAdminToast("Season banner images available for show " + opportunity.SeriesName, cancellationToken).ConfigureAwait(false); else logger.Info("Availability notification skipped by preference. Type=Banner, Show={0}, Preference={1}", opportunity.SeriesName, preference); }
                 }
+                var finalCache = new AvailabilityCache { Version = AvailabilityCacheVersion, CreatedUtc = DateTime.UtcNow, Entries = work.Opportunities.ToList(), SeriesIds = work.Opportunities.Where(x => x.Poster || x.Banner).Select(x => x.SeriesId).Distinct(StringComparer.OrdinalIgnoreCase).ToList() };
+                WriteJsonAtomically(availabilityPath, finalCache);
                 if (fileSystem.FileExists(availabilityWorkPath)) fileSystem.DeleteFile(availabilityWorkPath);
-                CreateRunActivity("Consistent Season Images availability cache completed", "Scanned " + series.Length + " shows; " + finalCache.SeriesIds.Count + " currently have available season artwork.", LogSeverity.Info);
-                logger.Info("Availability cache build completed. Shows={0}, AvailableShows={1}", series.Length, finalCache.SeriesIds.Count);
+                CreateRunActivity("Consistent Season Images availability cache completed", "Scanned " + series.Length + " shows; " + posterShows + " currently have available season posters and " + bannerShows + " currently have available season banners.", LogSeverity.Info);
+                logger.Info("Availability cache build completed. Shows={0}, AvailableShows={1}, PosterShows={2}, BannerShows={3}", series.Length, finalCache.SeriesIds.Count, posterShows, bannerShows);
             }
             catch (OperationCanceledException) { CreateRunActivity("Consistent Season Images availability cache cancelled", "The resumable checkpoint was retained.", LogSeverity.Info); throw; }
             catch (Exception ex) { CreateRunActivity("Consistent Season Images availability cache failed", ex.Message, LogSeverity.Error); throw; }
