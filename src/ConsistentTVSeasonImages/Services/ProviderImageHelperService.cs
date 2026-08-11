@@ -19,6 +19,8 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Notifications;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Activity;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
@@ -31,7 +33,7 @@ namespace ConsistentTVSeasonImages.Services
 {
     [Route("/ProviderImageHelper/Discover", "GET")]
     [Authenticated(Roles = "admin")]
-    public sealed class DiscoverRequest : IReturn<DiscoverResult> { public string Filter { get; set; } public string Search { get; set; } public int? StartIndex { get; set; } public int? Limit { get; set; } }
+    public sealed class DiscoverRequest : IReturn<DiscoverResult> { public string Filter { get; set; } public string Search { get; set; } public string AvailableType { get; set; } public int? StartIndex { get; set; } public int? Limit { get; set; } }
     [Route("/ProviderImageHelper/Show", "GET")]
     [Authenticated(Roles = "admin")]
     public sealed class ShowRequest : IReturn<ShowResult> { public string SeriesId { get; set; } }
@@ -53,8 +55,12 @@ namespace ConsistentTVSeasonImages.Services
     [Route("/ProviderImageHelper/Availability", "GET")]
     [Authenticated(Roles = "admin")]
     public sealed class AvailabilityRequest : IReturn<AvailabilityStatus> { }
+    [Route("/ProviderImageHelper/Settings", "GET")]
+    [Route("/ProviderImageHelper/Settings", "POST")]
+    [Authenticated(Roles = "admin")]
+    public sealed class SettingsRequest : IReturn<SettingsResult> { public string NotifyWhenAvailable { get; set; } }
 
-    public sealed class ShowResult { public string Id { get; set; } public string Name { get; set; } public bool Ignored { get; set; } public bool Available { get; set; } public bool MissingPoster { get; set; } public bool MissingPosterIncludingSpecials { get; set; } public bool MissingBanner { get; set; } public bool MissingBannerIncludingSpecials { get; set; } public List<SeasonSummary> Seasons { get; set; } }
+    public sealed class ShowResult { public string Id { get; set; } public string Name { get; set; } public bool Ignored { get; set; } public bool Available { get; set; } public bool AvailablePoster { get; set; } public bool AvailableBanner { get; set; } public bool MissingPoster { get; set; } public bool MissingPosterIncludingSpecials { get; set; } public bool MissingBanner { get; set; } public bool MissingBannerIncludingSpecials { get; set; } public List<SeasonSummary> Seasons { get; set; } }
     public sealed class DiscoverResult { public List<ShowResult> Items { get; set; } public int TotalRecordCount { get; set; } public int StartIndex { get; set; } public int Limit { get; set; } }
     public sealed class SeasonSummary { public string Id { get; set; } public string Name { get; set; } public int? Number { get; set; } public bool CurrentPoster { get; set; } public bool CurrentBanner { get; set; } public string CurrentPosterTag { get; set; } public string CurrentBannerTag { get; set; } }
     public sealed class ImageResult { public string Url { get; set; } public string ThumbnailUrl { get; set; } public string Type { get; set; } public string Provider { get; set; } public int? Width { get; set; } public int? Height { get; set; } }
@@ -64,10 +70,12 @@ namespace ConsistentTVSeasonImages.Services
     public sealed class ApplyResult { public bool Success { get; set; } public string SeasonId { get; set; } public string ImageType { get; set; } }
     public sealed class ClearCacheResult { public bool Success { get; set; } public int FilesRemoved { get; set; } }
     public sealed class IgnoreResult { public bool Success { get; set; } public bool Ignored { get; set; } }
-    public sealed class AvailabilityStatus { public bool Ready { get; set; } public bool Building { get; set; } public double Progress { get; set; } public int AvailableShows { get; set; } public DateTime? CreatedUtc { get; set; } }
-    public sealed class AvailabilityCache { public DateTime CreatedUtc { get; set; } public List<string> SeriesIds { get; set; } = new List<string>(); public List<AvailabilityOpportunity> Entries { get; set; } = new List<AvailabilityOpportunity>(); }
-    public sealed class AvailabilityOpportunity { public string SeriesId { get; set; } public string SeriesName { get; set; } public bool Poster { get; set; } public bool Banner { get; set; } public DateTime NextRefreshUtc { get; set; } }
-    public sealed class AvailabilityWork { public DateTime StartedUtc { get; set; } public bool FirstBuild { get; set; } public List<string> CompletedSeriesIds { get; set; } = new List<string>(); public List<AvailabilityOpportunity> Opportunities { get; set; } = new List<AvailabilityOpportunity>(); }
+    public sealed class AvailabilityStatus { public bool Ready { get; set; } public bool Building { get; set; } public double Progress { get; set; } public int AvailableShows { get; set; } public int AvailablePosterShows { get; set; } public int AvailableBannerShows { get; set; } public DateTime? CreatedUtc { get; set; } }
+    public sealed class SettingsResult { public string NotifyWhenAvailable { get; set; } }
+    public sealed class AvailabilityCache { public int Version { get; set; } public DateTime CreatedUtc { get; set; } public List<string> SeriesIds { get; set; } = new List<string>(); public List<AvailabilityOpportunity> Entries { get; set; } = new List<AvailabilityOpportunity>(); }
+    public sealed class AvailabilitySeason { public string SeasonId { get; set; } public bool Poster { get; set; } public bool Banner { get; set; } }
+    public sealed class AvailabilityOpportunity { public string SeriesId { get; set; } public string SeriesName { get; set; } public bool Poster { get; set; } public bool Banner { get; set; } public DateTime NextRefreshUtc { get; set; } public List<AvailabilitySeason> Seasons { get; set; } = new List<AvailabilitySeason>(); }
+    public sealed class AvailabilityWork { public int CacheVersion { get; set; } public DateTime StartedUtc { get; set; } public bool FirstBuild { get; set; } public List<string> CompletedSeriesIds { get; set; } = new List<string>(); public List<AvailabilityOpportunity> Opportunities { get; set; } = new List<AvailabilityOpportunity>(); }
     public sealed class ProviderImageCacheEntry { public DateTime CreatedUtc { get; set; } public List<CachedRemoteImage> Images { get; set; } }
     public sealed class CachedRemoteImage { public string ProviderName { get; set; } public string Url { get; set; } public string ThumbnailUrl { get; set; } public int? Height { get; set; } public int? Width { get; set; } public string Language { get; set; } public string DisplayLanguage { get; set; } public ImageType Type { get; set; } }
 
@@ -83,15 +91,16 @@ namespace ConsistentTVSeasonImages.Services
         private static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan ProviderMinimumInterval = TimeSpan.FromMilliseconds(350);
         private const int MaximumProviderAttempts = 3;
-        private readonly ILibraryManager library; private readonly IProviderManager providers; private readonly IFileSystem fileSystem; private readonly IImageProcessor imageProcessor; private readonly IServerConfigurationManager configuration; private readonly IJsonSerializer json; private readonly ILogger logger; private readonly INotificationManager notifications; private readonly IUserManager users; private readonly string cachePath; private readonly string availabilityPath; private readonly string availabilityWorkPath;
-        public ProviderImageHelperService(ILibraryManager library, IProviderManager providers, IFileSystem fileSystem, IImageProcessor imageProcessor, IServerConfigurationManager configuration, IApplicationPaths applicationPaths, IJsonSerializer json, ILogManager logs, INotificationManager notifications, IUserManager users)
-        { this.library = library; this.providers = providers; this.fileSystem = fileSystem; this.imageProcessor = imageProcessor; this.configuration = configuration; this.json = json; this.notifications = notifications; this.users = users; cachePath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "provider-images"); availabilityPath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "availability.json"); availabilityWorkPath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "availability-work.json"); logger = Plugin.Logger ?? logs.GetLogger("Consistent TV Season Images"); }
+        private const int AvailabilityCacheVersion = 2;
+        private readonly ILibraryManager library; private readonly IProviderManager providers; private readonly IFileSystem fileSystem; private readonly IImageProcessor imageProcessor; private readonly IServerConfigurationManager configuration; private readonly IJsonSerializer json; private readonly ILogger logger; private readonly IUserManager users; private readonly ISessionManager sessions; private readonly IActivityManager activities; private readonly string cachePath; private readonly string availabilityPath; private readonly string availabilityWorkPath;
+        public ProviderImageHelperService(ILibraryManager library, IProviderManager providers, IFileSystem fileSystem, IImageProcessor imageProcessor, IServerConfigurationManager configuration, IApplicationPaths applicationPaths, IJsonSerializer json, ILogManager logs, IUserManager users, ISessionManager sessions, IActivityManager activities)
+        { this.library = library; this.providers = providers; this.fileSystem = fileSystem; this.imageProcessor = imageProcessor; this.configuration = configuration; this.json = json; this.users = users; this.sessions = sessions; this.activities = activities; cachePath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "provider-images"); availabilityPath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "availability.json"); availabilityWorkPath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "availability-work.json"); logger = Plugin.Logger ?? logs.GetLogger("Consistent TV Season Images"); }
 
         public object Get(DiscoverRequest request)
         {
             var filter = (request.Filter ?? "all").ToLowerInvariant(); var search = request.Search ?? string.Empty;
             var startIndex = Math.Max(0, request.StartIndex ?? 0); var limit = Math.Max(1, Math.Min(100, request.Limit ?? 50));
-            logger.Debug("Discover started. Filter={0}, Search={1}, StartIndex={2}, Limit={3}", filter, search, startIndex, limit);
+            logger.Debug("Discover started. Filter={0}, AvailableType={1}, Search={2}, StartIndex={3}, Limit={4}", filter, request.AvailableType ?? "both", search, startIndex, limit);
             try
             {
                 var queried = library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { typeof(Series).Name }, Recursive = true, IsVirtualItem = false, HasPath = true }).OfType<Series>().ToList();
@@ -106,7 +115,9 @@ namespace ConsistentTVSeasonImages.Services
                 }
                 var ignored = new HashSet<string>((Plugin.Instance.Configuration.IgnoredSeriesIds ?? new string[0]), StringComparer.OrdinalIgnoreCase);
                 var available = LoadAvailability();
-                var matching = candidates.Select(s => { var x = CreateShowResult(s, seasonsBySeries == null ? null : seasonsBySeries[s.InternalId.ToString(CultureInfo.InvariantCulture)].ToArray(), false); x.Ignored = ignored.Contains(x.Id); x.Available = available != null && available.SeriesIds.Contains(x.Id, StringComparer.OrdinalIgnoreCase); return x; })
+                var availableType = (request.AvailableType ?? "both").ToLowerInvariant();
+                var availableEntries = available != null && available.Version == AvailabilityCacheVersion ? available.Entries.ToDictionary(x => x.SeriesId, StringComparer.OrdinalIgnoreCase) : new Dictionary<string, AvailabilityOpportunity>(StringComparer.OrdinalIgnoreCase);
+                var matching = candidates.Select(s => { var showSeasons = seasonsBySeries == null ? null : seasonsBySeries[s.InternalId.ToString(CultureInfo.InvariantCulture)].ToArray(); var x = CreateShowResult(s, showSeasons, false); x.Ignored = ignored.Contains(x.Id); AvailabilityOpportunity entry; availableEntries.TryGetValue(x.Id, out entry); var live = GetLiveAvailability(entry, showSeasons); x.AvailablePoster = live.Poster; x.AvailableBanner = live.Banner; x.Available = availableType == "poster" ? x.AvailablePoster : availableType == "banner" ? x.AvailableBanner : x.AvailablePoster || x.AvailableBanner; return x; })
                     .Where(s => filter == "ignored" ? s.Ignored : !s.Ignored && (filter == "all"
                         || filter == "available" && s.Available
                         || filter == "missingposters" && s.MissingPoster
@@ -115,13 +126,34 @@ namespace ConsistentTVSeasonImages.Services
                         || filter == "missingbannersspecial" && s.MissingBannerIncludingSpecials))
                     .OrderBy(s => s.Name).ToList();
                 var items = matching.Skip(startIndex).Take(limit).ToList();
+                if (filter == "available")
+                {
+                    logger.Info("Available discovery evaluated. RequestedType={0}, MatchedShows={1}, ReturnedShows={2}", availableType, matching.Count, items.Count);
+                }
                 logger.Debug("Discover completed. Queried={0}, Excluded={1}, Matched={2}, Returned={3}, StartIndex={4}", queried.Count, excluded.Count, matching.Count, items.Count, startIndex);
                 return new DiscoverResult { Items = items, TotalRecordCount = matching.Count, StartIndex = startIndex, Limit = limit };
             }
             catch (Exception ex) { logger.ErrorException("Discover failed. Filter={0}, Search={1}", ex, filter, search); throw; }
         }
 
-        public object Get(AvailabilityRequest request) { var cache = LoadAvailability(); lock (AvailabilitySync) return new AvailabilityStatus { Ready = cache != null, Building = availabilityBuilding, Progress = availabilityProgress, AvailableShows = cache?.SeriesIds.Count ?? 0, CreatedUtc = cache?.CreatedUtc }; }
+        public object Get(AvailabilityRequest request)
+        {
+            var cache = LoadAvailability(); var entries = cache?.Entries ?? new List<AvailabilityOpportunity>();
+            var seasons = library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { typeof(Season).Name }, Recursive = true }).OfType<Season>().ToLookup(x => x.SeriesId.ToString(CultureInfo.InvariantCulture), StringComparer.OrdinalIgnoreCase);
+            var live = cache != null && cache.Version == AvailabilityCacheVersion ? entries.Select(x => GetLiveAvailability(x, seasons[x.SeriesId].ToArray())).ToArray() : new AvailabilityFlags[0];
+            var posterOnly = live.Count(x => x.Poster && !x.Banner); var bannerOnly = live.Count(x => x.Banner && !x.Poster); var both = live.Count(x => x.Poster && x.Banner);
+            var posterTotal = posterOnly + both; var bannerTotal = bannerOnly + both; var either = posterOnly + bannerOnly + both;
+            logger.Info("Availability cache counts. PosterOnly={0}, BannerOnly={1}, Both={2}, PosterTotal={3}, BannerTotal={4}, Either={5}, CachedShows={6}", posterOnly, bannerOnly, both, posterTotal, bannerTotal, either, entries.Count);
+            lock (AvailabilitySync) return new AvailabilityStatus { Ready = cache != null && cache.Version == AvailabilityCacheVersion, Building = availabilityBuilding, Progress = availabilityProgress, AvailableShows = either, AvailablePosterShows = posterTotal, AvailableBannerShows = bannerTotal, CreatedUtc = cache?.CreatedUtc };
+        }
+        public object Get(SettingsRequest request) { return new SettingsResult { NotifyWhenAvailable = NormalizeNotificationPreference(Plugin.Instance.Configuration.NotifyWhenAvailable) }; }
+
+        public object Post(SettingsRequest request)
+        {
+            Plugin.Instance.Configuration.NotifyWhenAvailable = NormalizeNotificationPreference(request.NotifyWhenAvailable);
+            Plugin.Instance.SaveConfiguration(); logger.Info("Availability notification preference changed. Value={0}", Plugin.Instance.Configuration.NotifyWhenAvailable);
+            return new SettingsResult { NotifyWhenAvailable = Plugin.Instance.Configuration.NotifyWhenAvailable };
+        }
 
         public object Post(IgnoreRequest request)
         {
@@ -154,6 +186,33 @@ namespace ConsistentTVSeasonImages.Services
             fileSystem.MoveFile(temporary, path, true);
         }
 
+        private sealed class AvailabilityFlags { public bool Poster { get; set; } public bool Banner { get; set; } }
+        private static AvailabilityFlags GetLiveAvailability(AvailabilityOpportunity entry, IEnumerable<Season> seasons)
+        {
+            var result = new AvailabilityFlags(); if (entry?.Seasons == null || seasons == null) return result;
+            var cached = entry.Seasons.ToDictionary(x => x.SeasonId, StringComparer.OrdinalIgnoreCase);
+            foreach (var season in seasons)
+            {
+                AvailabilitySeason inventory; if (!cached.TryGetValue(season.GetClientId(), out inventory)) continue;
+                result.Poster |= inventory.Poster && !season.HasImage(ImageType.Primary, 0);
+                result.Banner |= inventory.Banner && !season.HasImage(ImageType.Banner, 0);
+            }
+            return result;
+        }
+
+        private static bool HasNewLiveProviderType(AvailabilityOpportunity current, AvailabilityOpportunity previous, IEnumerable<Season> seasons, bool poster)
+        {
+            var old = (previous?.Seasons ?? new List<AvailabilitySeason>()).ToDictionary(x => x.SeasonId, StringComparer.OrdinalIgnoreCase);
+            var now = (current?.Seasons ?? new List<AvailabilitySeason>()).ToDictionary(x => x.SeasonId, StringComparer.OrdinalIgnoreCase);
+            foreach (var season in seasons)
+            {
+                AvailabilitySeason currentSeason; AvailabilitySeason previousSeason; if (!now.TryGetValue(season.GetClientId(), out currentSeason)) continue; old.TryGetValue(season.GetClientId(), out previousSeason);
+                if (poster && currentSeason.Poster && previousSeason?.Poster != true && !season.HasImage(ImageType.Primary, 0)) return true;
+                if (!poster && currentSeason.Banner && previousSeason?.Banner != true && !season.HasImage(ImageType.Banner, 0)) return true;
+            }
+            return false;
+        }
+
         public async Task BuildAvailabilityCache(CancellationToken cancellationToken, IProgress<double> progress)
         {
             lock (AvailabilitySync) { if (availabilityBuilding) return; availabilityBuilding = true; availabilityProgress = 0; }
@@ -162,10 +221,11 @@ namespace ConsistentTVSeasonImages.Services
                 var priorCache = LoadAvailability();
                 var series = library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { typeof(Series).Name }, Recursive = true, IsVirtualItem = false, HasPath = true }).OfType<Series>().Where(x => string.IsNullOrEmpty(x.ExternalId)).ToArray();
                 var work = LoadJson<AvailabilityWork>(availabilityWorkPath);
+                if (work != null && work.CacheVersion != AvailabilityCacheVersion) work = null;
                 if (work == null)
                 {
-                    var firstBuild = priorCache == null || priorCache.Entries == null || priorCache.Entries.Count == 0;
-                    work = new AvailabilityWork { StartedUtc = DateTime.UtcNow, FirstBuild = firstBuild };
+                    var firstBuild = priorCache == null || priorCache.Version != AvailabilityCacheVersion;
+                    work = new AvailabilityWork { CacheVersion = AvailabilityCacheVersion, StartedUtc = DateTime.UtcNow, FirstBuild = firstBuild };
                     if (!firstBuild)
                     {
                         foreach (var entry in priorCache.Entries.Where(x => x.NextRefreshUtc > DateTime.UtcNow))
@@ -188,18 +248,19 @@ namespace ConsistentTVSeasonImages.Services
                     if (completed.Contains(id)) { var resumedPct = series.Length == 0 ? 100 : completed.Count * 100d / series.Length; lock (AvailabilitySync) availabilityProgress = resumedPct; progress.Report(resumedPct); continue; }
                     try
                     {
-                        var posterAvailable = false; var bannerAvailable = false;
+                        var posterAvailable = false; var bannerAvailable = false; var seasonInventory = new List<AvailabilitySeason>();
                         foreach (var season in GetSeasons(series[i]))
                         {
                             cancellationToken.ThrowIfCancellationRequested();
                             var remote = await GetRemoteImages(season, false, "availability", cancellationToken).ConfigureAwait(false);
                             if (remote.Diagnostics.Any(x => !x.UsedStaleCache && (x.Status == "Paused" || x.Status == "RateLimited" || x.Status == "TimedOut" || x.Status == "Unavailable" || x.Status == "RateLimitSuspected"))) throw new IOException("A provider had a transient failure; this show will be retried.");
-                            posterAvailable |= !season.HasImage(ImageType.Primary, 0) && remote.Images.Any(x => x.Type == ImageType.Primary);
-                            bannerAvailable |= !season.HasImage(ImageType.Banner, 0) && remote.Images.Any(x => x.Type == ImageType.Banner);
+                            var seasonPoster = remote.Images.Any(x => x.Type == ImageType.Primary); var seasonBanner = remote.Images.Any(x => x.Type == ImageType.Banner);
+                            posterAvailable |= seasonPoster; bannerAvailable |= seasonBanner;
+                            seasonInventory.Add(new AvailabilitySeason { SeasonId = season.GetClientId(), Poster = seasonPoster, Banner = seasonBanner });
                         }
                         work.Opportunities.RemoveAll(x => string.Equals(x.SeriesId, id, StringComparison.OrdinalIgnoreCase));
                         var nextRefresh = work.FirstBuild ? RandomizedInitialRefreshUtc(id, work.StartedUtc) : DateTime.UtcNow.Add(AvailabilityLifetime);
-                        work.Opportunities.Add(new AvailabilityOpportunity { SeriesId = id, SeriesName = series[i].Name, Poster = posterAvailable, Banner = bannerAvailable, NextRefreshUtc = nextRefresh });
+                        work.Opportunities.Add(new AvailabilityOpportunity { SeriesId = id, SeriesName = series[i].Name, Poster = posterAvailable, Banner = bannerAvailable, NextRefreshUtc = nextRefresh, Seasons = seasonInventory });
                         work.CompletedSeriesIds.Add(id); completed.Add(id); WriteJsonAtomically(availabilityWorkPath, work);
                         var pct = series.Length == 0 ? 100 : completed.Count * 100d / series.Length; lock (AvailabilitySync) availabilityProgress = pct; progress.Report(pct);
                         logger.Info("Availability cache show completed. Show={0}, Available={1}, Progress={2:0.0}%", series[i].Name, posterAvailable || bannerAvailable, pct);
@@ -208,18 +269,23 @@ namespace ConsistentTVSeasonImages.Services
                     catch (Exception ex) { failures.Add(id); logger.ErrorException("Availability cache show failed and will be retried. Show={0}, Id={1}", ex, series[i].Name, id); }
                 }
                 if (failures.Count > 0) throw new IOException("Availability scan retained its checkpoint but could not complete " + failures.Count + " show(s). They will be retried on the next run.");
-                var finalCache = new AvailabilityCache { CreatedUtc = DateTime.UtcNow, Entries = work.Opportunities.ToList(), SeriesIds = work.Opportunities.Where(x => x.Poster || x.Banner).Select(x => x.SeriesId).Distinct(StringComparer.OrdinalIgnoreCase).ToList() };
+                var finalCache = new AvailabilityCache { Version = AvailabilityCacheVersion, CreatedUtc = DateTime.UtcNow, Entries = work.Opportunities.ToList(), SeriesIds = work.Opportunities.Where(x => x.Poster || x.Banner).Select(x => x.SeriesId).Distinct(StringComparer.OrdinalIgnoreCase).ToList() };
                 WriteJsonAtomically(availabilityPath, finalCache);
-                var previous = new HashSet<string>(priorCache?.SeriesIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
-                foreach (var opportunity in work.Opportunities.Where(x => !previous.Contains(x.SeriesId)))
+                var preference = NormalizeNotificationPreference(Plugin.Instance.Configuration.NotifyWhenAvailable);
+                foreach (var opportunity in work.Opportunities)
                 {
+                    var previous = priorCache?.Entries?.FirstOrDefault(x => string.Equals(x.SeriesId, opportunity.SeriesId, StringComparison.OrdinalIgnoreCase));
                     var item = library.GetItemById(opportunity.SeriesId) as Series; if (item == null) continue;
-                    if (opportunity.Poster) NotifyAdmins("Consistent Season Images: New Season images available for show " + opportunity.SeriesName, item);
-                    if (opportunity.Banner) NotifyAdmins("Consistent Season Images: New Banner images available for show " + opportunity.SeriesName, item);
+                    var currentSeasons = GetSeasons(item);
+                    if (HasNewLiveProviderType(opportunity, previous, currentSeasons, true)) { if (preference == "All" || preference == "Posters") await SendTransientAdminToast("New Season images available for show " + opportunity.SeriesName, cancellationToken).ConfigureAwait(false); else logger.Info("Availability notification skipped by preference. Type=Poster, Show={0}, Preference={1}", opportunity.SeriesName, preference); }
+                    if (HasNewLiveProviderType(opportunity, previous, currentSeasons, false)) { if (preference == "All" || preference == "Banners") await SendTransientAdminToast("New Banner images available for show " + opportunity.SeriesName, cancellationToken).ConfigureAwait(false); else logger.Info("Availability notification skipped by preference. Type=Banner, Show={0}, Preference={1}", opportunity.SeriesName, preference); }
                 }
                 if (fileSystem.FileExists(availabilityWorkPath)) fileSystem.DeleteFile(availabilityWorkPath);
+                CreateRunActivity("Consistent Season Images availability cache completed", "Scanned " + series.Length + " shows; " + finalCache.SeriesIds.Count + " currently have available season artwork.", LogSeverity.Info);
                 logger.Info("Availability cache build completed. Shows={0}, AvailableShows={1}", series.Length, finalCache.SeriesIds.Count);
             }
+            catch (OperationCanceledException) { CreateRunActivity("Consistent Season Images availability cache cancelled", "The resumable checkpoint was retained.", LogSeverity.Info); throw; }
+            catch (Exception ex) { CreateRunActivity("Consistent Season Images availability cache failed", ex.Message, LogSeverity.Error); throw; }
             finally { lock (AvailabilitySync) availabilityBuilding = false; }
         }
 
@@ -233,15 +299,29 @@ namespace ConsistentTVSeasonImages.Services
             }
         }
 
-        private void NotifyAdmins(string title, Series series)
+        private static string NormalizeNotificationPreference(string value)
         {
-            try
+            if (string.Equals(value, "All", StringComparison.OrdinalIgnoreCase)) return "All";
+            if (string.Equals(value, "Banners", StringComparison.OrdinalIgnoreCase)) return "Banners";
+            return "Posters";
+        }
+
+        private async Task SendTransientAdminToast(string text, CancellationToken cancellationToken)
+        {
+            var administratorIds = new HashSet<long>(users.GetUserIdList(new UserQuery { IsAdministrator = true, IsDisabled = false }, cancellationToken));
+            var targets = sessions.Sessions.Where(x => administratorIds.Contains(x.UserInternalId)).ToArray(); var delivered = 0;
+            foreach (var session in targets)
             {
-                foreach (var user in users.GetUserList(new UserQuery { IsAdministrator = true, IsDisabled = false }))
-                    notifications.SendNotification(new Emby.Notifications.NotificationRequest { Title = title, Description = title, User = user, Item = series, Plugin = Plugin.Instance });
-                logger.Debug("Availability notification sent to administrators. Title={0}", title);
+                try { await sessions.SendMessageCommand(null, session.Id, new MediaBrowser.Model.Session.MessageCommand { Header = "Consistent Season Images", Text = text, TimeoutMs = 3000 }, cancellationToken).ConfigureAwait(false); delivered++; }
+                catch (Exception ex) { logger.ErrorException("Transient admin notification failed. Session={0}, User={1}", ex, session.Id, session.UserName); }
             }
-            catch (Exception ex) { logger.ErrorException("Availability notification failed. Title={0}", ex, title); }
+            logger.Info("Transient admin notification fired. ActiveAdminSessions={0}, Delivered={1}, Text={2}", targets.Length, delivered, text);
+        }
+
+        private void CreateRunActivity(string name, string overview, LogSeverity severity)
+        {
+            try { activities.Create(new ActivityLogEntry { Name = name, Overview = overview, ShortOverview = overview, Type = "ConsistentSeasonImagesAvailability", Date = DateTimeOffset.UtcNow, Severity = severity }); logger.Info("Persistent dashboard activity created. Name={0}", name); }
+            catch (Exception ex) { logger.ErrorException("Persistent dashboard activity could not be created. Name={0}", ex, name); }
         }
 
         public object Get(ShowRequest request)

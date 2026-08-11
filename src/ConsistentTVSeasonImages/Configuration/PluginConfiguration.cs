@@ -8,5 +8,6 @@ namespace ConsistentTVSeasonImages.Configuration
         public string TvdbApiKey { get; set; } = string.Empty;
         public string TvdbPin { get; set; } = string.Empty;
         public string[] IgnoredSeriesIds { get; set; } = new string[0];
+        public string NotifyWhenAvailable { get; set; } = "Posters";
     }
 }
