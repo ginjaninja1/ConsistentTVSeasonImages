@@ -62,12 +62,12 @@ namespace ConsistentTVSeasonImages.Services
         private const int MaximumProviderAttempts = 3;
         private readonly ILibraryManager library; private readonly IProviderManager providers; private readonly IFileSystem fileSystem; private readonly IImageProcessor imageProcessor; private readonly IServerConfigurationManager configuration; private readonly IJsonSerializer json; private readonly ILogger logger; private readonly string cachePath;
         public ProviderImageHelperService(ILibraryManager library, IProviderManager providers, IFileSystem fileSystem, IImageProcessor imageProcessor, IServerConfigurationManager configuration, IApplicationPaths applicationPaths, IJsonSerializer json, ILogManager logs)
-        { this.library = library; this.providers = providers; this.fileSystem = fileSystem; this.imageProcessor = imageProcessor; this.configuration = configuration; this.json = json; cachePath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "provider-images"); logger = Plugin.Logger ?? logs.GetLogger("Consistent TV Season Images"); logger.Info("ProviderImageHelperService instantiated. Provider cache={0}, LifetimeHours={1}", cachePath, CacheLifetime.TotalHours); }
+        { this.library = library; this.providers = providers; this.fileSystem = fileSystem; this.imageProcessor = imageProcessor; this.configuration = configuration; this.json = json; cachePath = Path.Combine(applicationPaths.CachePath, "consistent-tv-season-images", "provider-images"); logger = Plugin.Logger ?? logs.GetLogger("Consistent TV Season Images"); logger.Debug("ProviderImageHelperService instantiated. Provider cache={0}, LifetimeHours={1}", cachePath, CacheLifetime.TotalHours); }
 
         public object Get(DiscoverRequest request)
         {
             var filter = (request.Filter ?? "all").ToLowerInvariant(); var search = request.Search ?? string.Empty;
-            logger.Info("Discover started. Filter={0}, Search={1}", filter, search);
+            logger.Debug("Discover started. Filter={0}, Search={1}", filter, search);
             try
             {
                 var queried = library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { typeof(Series).Name }, Recursive = true, IsVirtualItem = false, HasPath = true }).OfType<Series>().ToList();
@@ -76,7 +76,7 @@ namespace ConsistentTVSeasonImages.Services
                 var result = queried.Where(s => !string.IsNullOrEmpty(s.Path) && string.IsNullOrEmpty(s.ExternalId) && s.Name.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
                     .Select(s => { var seasons = GetSeasons(s); return new ShowResult { Id = s.GetClientId(), Name = s.Name, MissingPoster = seasons.Any(x => !x.HasImage(ImageType.Primary, 0)), MissingBanner = seasons.Any(x => !x.HasImage(ImageType.Banner, 0)) }; })
                     .Where(s => filter == "all" || filter == "missingposters" && s.MissingPoster || filter == "missingbanners" && s.MissingBanner).OrderBy(s => s.Name).ToList();
-                logger.Info("Discover completed. Queried={0}, Excluded={1}, Returned={2}", queried.Count, excluded.Count, result.Count);
+                logger.Debug("Discover completed. Queried={0}, Excluded={1}, Returned={2}", queried.Count, excluded.Count, result.Count);
                 return result;
             }
             catch (Exception ex) { logger.ErrorException("Discover failed. Filter={0}, Search={1}", ex, filter, search); throw; }
@@ -86,19 +86,19 @@ namespace ConsistentTVSeasonImages.Services
         {
             var fetchTimer = Stopwatch.StartNew();
             var correlationId = Guid.NewGuid().ToString("N").Substring(0, 12);
-            logger.Info("Fetch started. CorrelationId={0}, SeriesId={1}", correlationId, request.SeriesId);
+            logger.Debug("Fetch started. CorrelationId={0}, SeriesId={1}", correlationId, request.SeriesId);
             try
             {
                 var series = library.GetItemById(request.SeriesId) as Series; if (series == null) throw new ArgumentException("Series not found.");
                 var seasons = GetSeasons(series).OrderBy(s => s.IndexNumber).ToArray();
-                logger.Info("Fetch resolved series. Name={0}, Path={1}, Seasons={2}, ProviderIds={3}", series.Name, series.Path ?? "(null)", seasons.Length, string.Join(",", series.ProviderIds.Select(x => x.Key + "=" + x.Value)));
+                logger.Debug("Fetch resolved series. Name={0}, Path={1}, Seasons={2}, ProviderIds={3}", series.Name, series.Path ?? "(null)", seasons.Length, string.Join(",", series.ProviderIds.Select(x => x.Key + "=" + x.Value)));
                 LogAvailableProviders("Series", series);
                 var result = new FetchResult { SeriesId = request.SeriesId, Name = series.Name, CorrelationId = correlationId, Seasons = new List<SeasonResult>() };
                 var cacheHits = 0; var cacheMisses = 0; var providerMilliseconds = 0L;
                 foreach (var season in seasons)
                 {
                     var seasonTimer = Stopwatch.StartNew();
-                    logger.Info("Fetch season identity. Season={0}, Id={1}, SeriesId={2}, ProviderIds={3}, ImageInfos={4}", season.Name, season.GetClientId(), season.SeriesId, string.Join(",", season.ProviderIds.Select(x => x.Key + "=" + x.Value)), string.Join(";", season.ImageInfos.Select(x => x.Type + "=" + x.Path)));
+                    logger.Debug("Fetch season identity. Season={0}, Id={1}, SeriesId={2}, ProviderIds={3}, ImageInfos={4}", season.Name, season.GetClientId(), season.SeriesId, string.Join(",", season.ProviderIds.Select(x => x.Key + "=" + x.Value)), string.Join(";", season.ImageInfos.Select(x => x.Type + "=" + x.Path)));
                     LogAvailableProviders("Season", season);
                     var fetched = await GetRemoteImages(season, request.IncludeAllLanguages, correlationId).ConfigureAwait(false);
                     cacheHits += fetched.CacheHits; cacheMisses += fetched.CacheMisses; providerMilliseconds += fetched.ProviderMilliseconds;
@@ -106,12 +106,12 @@ namespace ConsistentTVSeasonImages.Services
                     var banners = fetched.Images.Where(x => x.Type == ImageType.Banner).ToList();
                     var posterResults = Map(posters, ImageType.Primary); var bannerResults = Map(banners, ImageType.Banner);
                     posterResults = DistinctImages(posterResults); bannerResults = DistinctImages(bannerResults);
-                    logger.Info("Fetch season completed. Season={0}, Id={1}, HasCurrentPoster={2}, HasCurrentBanner={3}, Posters={4}, Banners={5}, ElapsedMs={6}, CacheHits={7}, CacheMisses={8}", season.Name, season.GetClientId(), season.HasImage(ImageType.Primary, 0), season.HasImage(ImageType.Banner, 0), posterResults.Count, bannerResults.Count, seasonTimer.ElapsedMilliseconds, fetched.CacheHits, fetched.CacheMisses);
+                    logger.Debug("Fetch season completed. Season={0}, Id={1}, HasCurrentPoster={2}, HasCurrentBanner={3}, Posters={4}, Banners={5}, ElapsedMs={6}, CacheHits={7}, CacheMisses={8}", season.Name, season.GetClientId(), season.HasImage(ImageType.Primary, 0), season.HasImage(ImageType.Banner, 0), posterResults.Count, bannerResults.Count, seasonTimer.ElapsedMilliseconds, fetched.CacheHits, fetched.CacheMisses);
                     LogProviderCounts(season, posterResults.Concat(bannerResults));
                     var seasonPoster = LocalImageUrl(season, ImageType.Primary); var seasonBanner = LocalImageUrl(season, ImageType.Banner);
                     var posterTag = ImageTag(season, ImageType.Primary); var bannerTag = ImageTag(season, ImageType.Banner);
-                    logger.Info("Current Emby image URL. Season={0}, Id={1}, Type=Primary, Url={2}", season.Name, season.GetClientId(), CurrentImageUrl(season, ImageType.Primary, posterTag) ?? "(none)");
-                    logger.Info("Current Emby image URL. Season={0}, Id={1}, Type=Banner, Url={2}", season.Name, season.GetClientId(), CurrentImageUrl(season, ImageType.Banner, bannerTag) ?? "(none)");
+                    logger.Debug("Current Emby image URL. Season={0}, Id={1}, Type=Primary, Url={2}", season.Name, season.GetClientId(), CurrentImageUrl(season, ImageType.Primary, posterTag) ?? "(none)");
+                    logger.Debug("Current Emby image URL. Season={0}, Id={1}, Type=Banner, Url={2}", season.Name, season.GetClientId(), CurrentImageUrl(season, ImageType.Banner, bannerTag) ?? "(none)");
                     result.Seasons.Add(new SeasonResult { Id = season.GetClientId(), Name = season.Name, Number = season.IndexNumber, CurrentPoster = seasonPoster, CurrentBanner = seasonBanner, CurrentPosterItemId = seasonPoster == null ? null : season.GetClientId(), CurrentBannerItemId = seasonBanner == null ? null : season.GetClientId(), CurrentPosterTag = posterTag, CurrentBannerTag = bannerTag, Posters = posterResults, Banners = bannerResults, ProviderDiagnostics = fetched.Diagnostics });
                 }
                 logger.Info("Fetch completed. CorrelationId={0}, Series={1}, Seasons={2}, TotalPosters={3}, TotalBanners={4}, ElapsedMs={5}, ProviderElapsedMs={6}, CacheHits={7}, CacheMisses={8}", correlationId, series.Name, result.Seasons.Count, result.Seasons.Sum(x => x.Posters.Count), result.Seasons.Sum(x => x.Banners.Count), fetchTimer.ElapsedMilliseconds, providerMilliseconds, cacheHits, cacheMisses);
@@ -122,14 +122,14 @@ namespace ConsistentTVSeasonImages.Services
 
         public async Task<object> Post(ApplyRequest request)
         {
-            logger.Info("Apply started. SeasonId={0}, ImageType={1}, Url={2}, SourceItemId={3}", request.SeasonId, request.ImageType, request.ImageUrl ?? "(null)", request.SourceItemId ?? "(null)");
-            try { var season = library.GetItemById(request.SeasonId) as Season; if (season == null) throw new ArgumentException("Season not found."); ImageType type; var name = request.ImageType == "Poster" ? "Primary" : request.ImageType; if (!Enum.TryParse(name, true, out type) || type != ImageType.Primary && type != ImageType.Banner) throw new ArgumentException("ImageType must be Poster or Banner."); var source = request.ImageUrl; if (!string.IsNullOrEmpty(request.SourceItemId)) { var sourceItem = library.GetItemById(request.SourceItemId); var sourceInfo = sourceItem?.GetImageInfo(type, 0); if (sourceInfo == null || string.IsNullOrEmpty(sourceInfo.Path) || !fileSystem.FileExists(sourceInfo.Path)) throw new ArgumentException("The selected current source image is unavailable."); source = sourceInfo.Path; logger.Info("Apply resolved local current source. SourceItem={0}, Type={1}, Path={2}", sourceItem.Name, type, source); } else { Uri uri; if (!Uri.TryCreate(source, UriKind.Absolute, out uri) || uri.Scheme != "https" && uri.Scheme != "http") throw new ArgumentException("A valid HTTP(S) image URL is required."); } await providers.SaveImage(season, library.GetLibraryOptions(season), source, type, 0, new long[0], new DirectoryService(logger, fileSystem), true, CancellationToken.None).ConfigureAwait(false); season.UpdateToRepository(ItemUpdateType.ImageUpdate); logger.Info("Apply completed. Season={0}, Id={1}, ImageType={2}", season.Name, request.SeasonId, type); return new ApplyResult { Success = true, SeasonId = request.SeasonId, ImageType = request.ImageType }; }
+            logger.Debug("Apply started. SeasonId={0}, ImageType={1}, Url={2}, SourceItemId={3}", request.SeasonId, request.ImageType, request.ImageUrl ?? "(null)", request.SourceItemId ?? "(null)");
+            try { var season = library.GetItemById(request.SeasonId) as Season; if (season == null) throw new ArgumentException("Season not found."); ImageType type; var name = request.ImageType == "Poster" ? "Primary" : request.ImageType; if (!Enum.TryParse(name, true, out type) || type != ImageType.Primary && type != ImageType.Banner) throw new ArgumentException("ImageType must be Poster or Banner."); var source = request.ImageUrl; if (!string.IsNullOrEmpty(request.SourceItemId)) { var sourceItem = library.GetItemById(request.SourceItemId); var sourceInfo = sourceItem?.GetImageInfo(type, 0); if (sourceInfo == null || string.IsNullOrEmpty(sourceInfo.Path) || !fileSystem.FileExists(sourceInfo.Path)) throw new ArgumentException("The selected current source image is unavailable."); source = sourceInfo.Path; logger.Debug("Apply resolved local current source. SourceItem={0}, Type={1}, Path={2}", sourceItem.Name, type, source); } else { Uri uri; if (!Uri.TryCreate(source, UriKind.Absolute, out uri) || uri.Scheme != "https" && uri.Scheme != "http") throw new ArgumentException("A valid HTTP(S) image URL is required."); } await providers.SaveImage(season, library.GetLibraryOptions(season), source, type, 0, new long[0], new DirectoryService(logger, fileSystem), true, CancellationToken.None).ConfigureAwait(false); season.UpdateToRepository(ItemUpdateType.ImageUpdate); logger.Info("Apply completed. Season={0}, Id={1}, ImageType={2}", season.Name, request.SeasonId, type); return new ApplyResult { Success = true, SeasonId = request.SeasonId, ImageType = request.ImageType }; }
             catch (Exception ex) { logger.ErrorException("Apply failed. SeasonId={0}, ImageType={1}, Url={2}", ex, request.SeasonId, request.ImageType, request.ImageUrl); throw; }
         }
 
         public object Delete(RemoveImageRequest request)
         {
-            logger.Info("Remove image started. SeasonId={0}, ImageType={1}", request.SeasonId, request.ImageType);
+            logger.Debug("Remove image started. SeasonId={0}, ImageType={1}", request.SeasonId, request.ImageType);
             try
             {
                 var season = library.GetItemById(request.SeasonId) as Season;
@@ -176,7 +176,7 @@ namespace ConsistentTVSeasonImages.Services
                 diagnostic.BannerCount = fetched.Images.Count(x => SameProvider(x.ProviderName, diagnostic.Provider) && x.Type == ImageType.Banner);
                 if ((diagnostic.Status == "Success" || diagnostic.Status == "Cached") && diagnostic.PosterCount + diagnostic.BannerCount == 0) { diagnostic.Status = "Empty"; diagnostic.Message = includeAllLanguages ? "Provider returned no images." : "Provider returned no images matching the selected language."; }
             }
-            logger.Info("Provider image aggregation completed. Season={0}, Id={1}, IncludeAllLanguages={2}, EffectiveLanguage={3}, BeforeLanguageFilter={4}, AfterLanguageFilter={5}, ProviderLanguages={6}, Providers={7}, CacheHits={8}, CacheMisses={9}", season.Name, season.GetClientId(), includeAllLanguages, language ?? "(none)", beforeFilter, fetched.Images.Count, providerLanguages, ProviderSummary(fetched.Images), fetched.CacheHits, fetched.CacheMisses);
+            logger.Debug("Provider image aggregation completed. Season={0}, Id={1}, IncludeAllLanguages={2}, EffectiveLanguage={3}, BeforeLanguageFilter={4}, AfterLanguageFilter={5}, ProviderLanguages={6}, Providers={7}, CacheHits={8}, CacheMisses={9}", season.Name, season.GetClientId(), includeAllLanguages, language ?? "(none)", beforeFilter, fetched.Images.Count, providerLanguages, ProviderSummary(fetched.Images), fetched.CacheHits, fetched.CacheMisses);
             return fetched;
         }
         private async Task<ProviderFetchResult> GetRegisteredProviderImages(BaseItem item, MediaBrowser.Model.Configuration.LibraryOptions libraryOptions, Func<IRemoteImageProvider, bool> selector, string selectionName, string correlationId)
@@ -192,7 +192,7 @@ namespace ConsistentTVSeasonImages.Services
             var remoteProviders = registered.Cast<object>().OfType<IRemoteImageProvider>().ToArray();
             logger.Debug("Registered remote-provider inventory. Item={0}, ItemType={1}, Count={2}, Providers={3}", item.Name, item.GetType().FullName, remoteProviders.Length, string.Join(";", remoteProviders.Select(x => x.Name + "|" + x.GetType().FullName)));
             var selectedProviders = remoteProviders.Where(selector).ToArray();
-            logger.Info("Registered image-provider selection. Selection={0}, Item={1}, Matches={2}, Providers={3}", selectionName, item.Name, selectedProviders.Length, string.Join(",", selectedProviders.Select(x => x.Name + "|" + x.GetType().FullName)));
+            logger.Debug("Registered image-provider selection. Selection={0}, Item={1}, Matches={2}, Providers={3}", selectionName, item.Name, selectedProviders.Length, string.Join(",", selectedProviders.Select(x => x.Name + "|" + x.GetType().FullName)));
             foreach (var provider in selectedProviders)
             {
                 ProviderDiagnostic diagnostic = null;
@@ -217,7 +217,7 @@ namespace ConsistentTVSeasonImages.Services
                         {
                             lastError = ex;
                             var transient = IsTransient(ex);
-                            logger.Warn("Provider attempt failed. CorrelationId={0}, Item={1}, Provider={2}, Attempt={3}, Transient={4}, Error={5}", correlationId, item.Name, provider.Name, attempt, transient, FlattenMessage(ex));
+                            logger.Debug("Provider attempt failed. CorrelationId={0}, Item={1}, Provider={2}, Attempt={3}, Transient={4}, Error={5}", correlationId, item.Name, provider.Name, attempt, transient, FlattenMessage(ex));
                             if (!transient || attempt == MaximumProviderAttempts || ex is ProviderCircuitOpenException) break;
                             var retryAfter = TryGetRetryAfterSeconds(ex);
                             await Task.Delay(TimeSpan.FromSeconds(retryAfter.HasValue ? Math.Min(120, Math.Max(1, retryAfter.Value)) : attempt == 1 ? 1 : 3)).ConfigureAwait(false);
@@ -228,7 +228,8 @@ namespace ConsistentTVSeasonImages.Services
                     {
                         result.Images.AddRange(matching); await WriteCache(item, provider, libraryOptions, matching).ConfigureAwait(false);
                         diagnostic.Status = matching.Count == 0 ? "Empty" : "Success"; diagnostic.Message = matching.Count == 0 ? "Provider returned no images." : "Provider responded normally.";
-                        logger.Info("Registered provider invocation completed. CorrelationId={0}, Item={1}, Provider={2}, Results={3}, Attempts={4}, ElapsedMs={5}", correlationId, item.Name, provider.Name, matching.Count, diagnostic.Attempts, timer.ElapsedMilliseconds);
+                        if (diagnostic.Attempts > 1) logger.Info("Provider recovered after retry. CorrelationId={0}, Item={1}, Provider={2}, Results={3}, Attempts={4}, ElapsedMs={5}", correlationId, item.Name, provider.Name, matching.Count, diagnostic.Attempts, timer.ElapsedMilliseconds);
+                        else logger.Debug("Registered provider invocation completed. CorrelationId={0}, Item={1}, Provider={2}, Results={3}, Attempts={4}, ElapsedMs={5}", correlationId, item.Name, provider.Name, matching.Count, diagnostic.Attempts, timer.ElapsedMilliseconds);
                     }
                     else
                     {
@@ -420,12 +421,12 @@ namespace ConsistentTVSeasonImages.Services
         {
             var available = providers.GetRemoteImageProviderInfo(item, library.GetLibraryOptions(item)).ToArray();
             if (available.Length == 0) { logger.Warn("No remote image fetchers registered. ItemKind={0}, Name={1}, Id={2}", itemKind, item.Name, item.GetClientId()); return; }
-            foreach (var provider in available) logger.Info("Remote image fetcher available. ItemKind={0}, Name={1}, Id={2}, Fetcher={3}, Supported={4}", itemKind, item.Name, item.GetClientId(), provider.Name, string.Join(",", provider.SupportedImages));
+            foreach (var provider in available) logger.Debug("Remote image fetcher available. ItemKind={0}, Name={1}, Id={2}, Fetcher={3}, Supported={4}", itemKind, item.Name, item.GetClientId(), provider.Name, string.Join(",", provider.SupportedImages));
         }
         private string ImageTag(BaseItem item, ImageType type) { var info = item.GetImageInfo(type, 0); return info == null ? null : imageProcessor.GetImageCacheTag(item, info); }
         private static string CurrentImageUrl(BaseItem item, ImageType type, string tag) { return item.HasImage(type, 0) ? "/Items/" + item.GetClientId() + "/Images/" + type + "?tag=" + Uri.EscapeDataString(tag ?? string.Empty) + "&quality=90" : null; }
         private static List<ImageResult> DistinctImages(IEnumerable<ImageResult> images) { return images.Where(x => !string.IsNullOrWhiteSpace(x.Url)).GroupBy(x => x.Url, StringComparer.OrdinalIgnoreCase).Select(x => x.First()).ToList(); }
-        private void LogProviderCounts(Season season, IEnumerable<ImageResult> images) { foreach (var group in images.GroupBy(x => new { x.Provider, x.Type })) logger.Info("Fetcher result. Season={0}, Fetcher={1}, Type={2}, Count={3}", season.Name, group.Key.Provider ?? "(unknown)", group.Key.Type, group.Count()); }
+        private void LogProviderCounts(Season season, IEnumerable<ImageResult> images) { foreach (var group in images.GroupBy(x => new { x.Provider, x.Type })) logger.Debug("Fetcher result. Season={0}, Fetcher={1}, Type={2}, Count={3}", season.Name, group.Key.Provider ?? "(unknown)", group.Key.Type, group.Count()); }
         private static string LocalImageUrl(BaseItem item, ImageType type) { return item.HasImage(type, 0) ? "/Items/" + item.GetClientId() + "/Images/" + type : null; }
         private static List<ImageResult> Map(IEnumerable<RemoteImageInfo> images, ImageType type) { return images.Where(i => i.Type == type).Select(i => new ImageResult { Url = i.Url, ThumbnailUrl = i.ThumbnailUrl ?? i.Url, Type = type == ImageType.Primary ? "Poster" : "Banner", Provider = i.ProviderName, Width = i.Width, Height = i.Height }).ToList(); }
     }

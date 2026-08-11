@@ -19,7 +19,7 @@ namespace ConsistentTVSeasonImages
         {
             Instance = this;
             Logger = logs.GetLogger(Name);
-            Logger.Info("Plugin {0} version {1} initialized. Assembly: {2}", Name, GetType().Assembly.GetName().Version, GetType().Assembly.FullName);
+            Logger.Debug("Plugin {0} version {1} initialized. Assembly: {2}", Name, GetType().Assembly.GetName().Version, GetType().Assembly.FullName);
         }
 
         public static Plugin Instance { get; private set; }
@@ -32,14 +32,15 @@ namespace ConsistentTVSeasonImages
 
         public IEnumerable<PluginPageInfo> GetPages()
         {
-            Logger.Info("Registering web resources ProviderImageHelper and ProviderImageHelperJs.");
+            Logger.Debug("Registering web resources ProviderImageHelper and ProviderImageHelperJs.");
             return new[]
             {
                 new PluginPageInfo
                 {
                     Name = "ProviderImageHelper",
                     EmbeddedResourcePath = GetType().Namespace + ".Web.ProviderImageHelper.html",
-                    EnableInMainMenu = true
+                    EnableInMainMenu = true,
+                    MenuIcon = "compare"
                 },
                 new PluginPageInfo
                 {
