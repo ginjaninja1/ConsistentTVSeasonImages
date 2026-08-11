@@ -42,7 +42,7 @@ namespace ConsistentTVSeasonImages.Services
     [Authenticated(Roles = "admin")]
     public sealed class ClearCacheRequest : IReturn<ClearCacheResult> { }
 
-    public sealed class ShowResult { public string Id { get; set; } public string Name { get; set; } public bool MissingPoster { get; set; } public bool MissingBanner { get; set; } }
+    public sealed class ShowResult { public string Id { get; set; } public string Name { get; set; } public bool MissingPoster { get; set; } public bool MissingPosterIncludingSpecials { get; set; } public bool MissingBanner { get; set; } public bool MissingBannerIncludingSpecials { get; set; } }
     public sealed class ImageResult { public string Url { get; set; } public string ThumbnailUrl { get; set; } public string Type { get; set; } public string Provider { get; set; } public int? Width { get; set; } public int? Height { get; set; } }
     public sealed class ProviderDiagnostic { public string Provider { get; set; } public string Status { get; set; } public string Message { get; set; } public bool SupportsPosters { get; set; } public bool SupportsBanners { get; set; } public int PosterCount { get; set; } public int BannerCount { get; set; } public int Attempts { get; set; } public bool UsedStaleCache { get; set; } public double? StaleCacheAgeHours { get; set; } public int? RetryAfterSeconds { get; set; } }
     public sealed class SeasonResult { public string Id { get; set; } public string Name { get; set; } public int? Number { get; set; } public string CurrentPoster { get; set; } public string CurrentBanner { get; set; } public string CurrentPosterItemId { get; set; } public string CurrentBannerItemId { get; set; } public string CurrentPosterTag { get; set; } public string CurrentBannerTag { get; set; } public List<ImageResult> Posters { get; set; } public List<ImageResult> Banners { get; set; } public List<ProviderDiagnostic> ProviderDiagnostics { get; set; } }
@@ -74,8 +74,26 @@ namespace ConsistentTVSeasonImages.Services
                 var excluded = queried.Where(s => string.IsNullOrEmpty(s.Path) || !string.IsNullOrEmpty(s.ExternalId)).ToList();
                 foreach (var item in excluded) logger.Debug("Discover excluded non-library series. Name={0}, Id={1}, Path={2}, ExternalId={3}", item.Name, item.GetClientId(), item.Path ?? "(null)", item.ExternalId ?? "(null)");
                 var result = queried.Where(s => !string.IsNullOrEmpty(s.Path) && string.IsNullOrEmpty(s.ExternalId) && s.Name.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
-                    .Select(s => { var seasons = GetSeasons(s); return new ShowResult { Id = s.GetClientId(), Name = s.Name, MissingPoster = seasons.Any(x => !x.HasImage(ImageType.Primary, 0)), MissingBanner = seasons.Any(x => !x.HasImage(ImageType.Banner, 0)) }; })
-                    .Where(s => filter == "all" || filter == "missingposters" && s.MissingPoster || filter == "missingbanners" && s.MissingBanner).OrderBy(s => s.Name).ToList();
+                    .Select(s =>
+                    {
+                        var seasons = GetSeasons(s);
+                        var regularSeasons = seasons.Where(x => x.IndexNumber.HasValue && x.IndexNumber.Value >= 1).ToArray();
+                        return new ShowResult
+                        {
+                            Id = s.GetClientId(),
+                            Name = s.Name,
+                            MissingPoster = regularSeasons.Any(x => !x.HasImage(ImageType.Primary, 0)),
+                            MissingPosterIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Primary, 0)),
+                            MissingBanner = regularSeasons.Any(x => !x.HasImage(ImageType.Banner, 0)),
+                            MissingBannerIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Banner, 0))
+                        };
+                    })
+                    .Where(s => filter == "all"
+                        || filter == "missingposters" && s.MissingPoster
+                        || filter == "missingpostersspecial" && s.MissingPosterIncludingSpecials
+                        || filter == "missingbanners" && s.MissingBanner
+                        || filter == "missingbannersspecial" && s.MissingBannerIncludingSpecials)
+                    .OrderBy(s => s.Name).ToList();
                 logger.Debug("Discover completed. Queried={0}, Excluded={1}, Returned={2}", queried.Count, excluded.Count, result.Count);
                 return result;
             }
