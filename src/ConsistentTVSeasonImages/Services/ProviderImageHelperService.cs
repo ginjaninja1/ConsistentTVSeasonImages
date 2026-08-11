@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -28,7 +29,10 @@ namespace ConsistentTVSeasonImages.Services
 {
     [Route("/ProviderImageHelper/Discover", "GET")]
     [Authenticated(Roles = "admin")]
-    public sealed class DiscoverRequest : IReturn<List<ShowResult>> { public string Filter { get; set; } public string Search { get; set; } }
+    public sealed class DiscoverRequest : IReturn<DiscoverResult> { public string Filter { get; set; } public string Search { get; set; } public int? StartIndex { get; set; } public int? Limit { get; set; } }
+    [Route("/ProviderImageHelper/Show", "GET")]
+    [Authenticated(Roles = "admin")]
+    public sealed class ShowRequest : IReturn<ShowResult> { public string SeriesId { get; set; } }
     [Route("/ProviderImageHelper/Fetch", "GET")]
     [Authenticated(Roles = "admin")]
     public sealed class FetchRequest : IReturn<FetchResult> { public string SeriesId { get; set; } public string SeasonId { get; set; } public bool IncludeAllLanguages { get; set; } }
@@ -43,6 +47,7 @@ namespace ConsistentTVSeasonImages.Services
     public sealed class ClearCacheRequest : IReturn<ClearCacheResult> { }
 
     public sealed class ShowResult { public string Id { get; set; } public string Name { get; set; } public bool MissingPoster { get; set; } public bool MissingPosterIncludingSpecials { get; set; } public bool MissingBanner { get; set; } public bool MissingBannerIncludingSpecials { get; set; } public List<SeasonSummary> Seasons { get; set; } }
+    public sealed class DiscoverResult { public List<ShowResult> Items { get; set; } public int TotalRecordCount { get; set; } public int StartIndex { get; set; } public int Limit { get; set; } }
     public sealed class SeasonSummary { public string Id { get; set; } public string Name { get; set; } public int? Number { get; set; } public bool CurrentPoster { get; set; } public bool CurrentBanner { get; set; } public string CurrentPosterTag { get; set; } public string CurrentBannerTag { get; set; } }
     public sealed class ImageResult { public string Url { get; set; } public string ThumbnailUrl { get; set; } public string Type { get; set; } public string Provider { get; set; } public int? Width { get; set; } public int? Height { get; set; } }
     public sealed class ProviderDiagnostic { public string Provider { get; set; } public string Status { get; set; } public string Message { get; set; } public bool SupportsPosters { get; set; } public bool SupportsBanners { get; set; } public int PosterCount { get; set; } public int BannerCount { get; set; } public int Attempts { get; set; } public bool UsedStaleCache { get; set; } public double? StaleCacheAgeHours { get; set; } public int? RetryAfterSeconds { get; set; } }
@@ -68,38 +73,41 @@ namespace ConsistentTVSeasonImages.Services
         public object Get(DiscoverRequest request)
         {
             var filter = (request.Filter ?? "all").ToLowerInvariant(); var search = request.Search ?? string.Empty;
-            logger.Debug("Discover started. Filter={0}, Search={1}", filter, search);
+            var startIndex = Math.Max(0, request.StartIndex ?? 0); var limit = Math.Max(1, Math.Min(100, request.Limit ?? 50));
+            logger.Debug("Discover started. Filter={0}, Search={1}, StartIndex={2}, Limit={3}", filter, search, startIndex, limit);
             try
             {
                 var queried = library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { typeof(Series).Name }, Recursive = true, IsVirtualItem = false, HasPath = true }).OfType<Series>().ToList();
                 var excluded = queried.Where(s => string.IsNullOrEmpty(s.Path) || !string.IsNullOrEmpty(s.ExternalId)).ToList();
                 foreach (var item in excluded) logger.Debug("Discover excluded non-library series. Name={0}, Id={1}, Path={2}, ExternalId={3}", item.Name, item.GetClientId(), item.Path ?? "(null)", item.ExternalId ?? "(null)");
-                var result = queried.Where(s => !string.IsNullOrEmpty(s.Path) && string.IsNullOrEmpty(s.ExternalId) && s.Name.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
-                    .Select(s =>
-                    {
-                        var seasons = GetSeasons(s);
-                        var regularSeasons = seasons.Where(x => x.IndexNumber.HasValue && x.IndexNumber.Value >= 1).ToArray();
-                        return new ShowResult
-                        {
-                            Id = s.GetClientId(),
-                            Name = s.Name,
-                            MissingPoster = regularSeasons.Any(x => !x.HasImage(ImageType.Primary, 0)),
-                            MissingPosterIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Primary, 0)),
-                            MissingBanner = regularSeasons.Any(x => !x.HasImage(ImageType.Banner, 0)),
-                            MissingBannerIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Banner, 0)),
-                            Seasons = seasons.OrderBy(x => x.IndexNumber).Select(x => new SeasonSummary { Id = x.GetClientId(), Name = x.Name, Number = x.IndexNumber, CurrentPoster = x.HasImage(ImageType.Primary, 0), CurrentBanner = x.HasImage(ImageType.Banner, 0), CurrentPosterTag = ImageTag(x, ImageType.Primary), CurrentBannerTag = ImageTag(x, ImageType.Banner) }).ToList()
-                        };
-                    })
+                var candidates = queried.Where(s => !string.IsNullOrEmpty(s.Path) && string.IsNullOrEmpty(s.ExternalId) && s.Name.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                ILookup<string, Season> seasonsBySeries = null;
+                if (filter != "all")
+                {
+                    seasonsBySeries = library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { typeof(Season).Name }, Recursive = true }).OfType<Season>()
+                        .ToLookup(x => x.SeriesId.ToString(CultureInfo.InvariantCulture), StringComparer.OrdinalIgnoreCase);
+                }
+                var matching = candidates.Select(s => CreateShowResult(s, seasonsBySeries == null ? null : seasonsBySeries[s.InternalId.ToString(CultureInfo.InvariantCulture)].ToArray(), false))
                     .Where(s => filter == "all"
                         || filter == "missingposters" && s.MissingPoster
                         || filter == "missingpostersspecial" && s.MissingPosterIncludingSpecials
                         || filter == "missingbanners" && s.MissingBanner
                         || filter == "missingbannersspecial" && s.MissingBannerIncludingSpecials)
                     .OrderBy(s => s.Name).ToList();
-                logger.Debug("Discover completed. Queried={0}, Excluded={1}, Returned={2}", queried.Count, excluded.Count, result.Count);
-                return result;
+                var items = matching.Skip(startIndex).Take(limit).ToList();
+                logger.Debug("Discover completed. Queried={0}, Excluded={1}, Matched={2}, Returned={3}, StartIndex={4}", queried.Count, excluded.Count, matching.Count, items.Count, startIndex);
+                return new DiscoverResult { Items = items, TotalRecordCount = matching.Count, StartIndex = startIndex, Limit = limit };
             }
             catch (Exception ex) { logger.ErrorException("Discover failed. Filter={0}, Search={1}", ex, filter, search); throw; }
+        }
+
+        public object Get(ShowRequest request)
+        {
+            var series = library.GetItemById(request.SeriesId) as Series;
+            if (series == null) throw new ArgumentException("Series not found.");
+            var result = CreateShowResult(series, GetSeasons(series), true);
+            logger.Debug("Show summary completed. Series={0}, Id={1}, Seasons={2}", series.Name, request.SeriesId, result.Seasons.Count);
+            return result;
         }
 
         public async Task<object> Get(FetchRequest request)
@@ -173,6 +181,22 @@ namespace ConsistentTVSeasonImages.Services
             if (fileSystem.DirectoryExists(cachePath)) fileSystem.DeleteDirectory(cachePath, true);
             logger.Info("Provider image cache cleared. Path={0}, FilesRemoved={1}", cachePath, removed);
             return new ClearCacheResult { Success = true, FilesRemoved = removed };
+        }
+
+        private ShowResult CreateShowResult(Series series, Season[] seasons, bool includeSeasons)
+        {
+            seasons = seasons ?? new Season[0];
+            var regularSeasons = seasons.Where(x => x.IndexNumber.HasValue && x.IndexNumber.Value >= 1).ToArray();
+            return new ShowResult
+            {
+                Id = series.GetClientId(),
+                Name = series.Name,
+                MissingPoster = regularSeasons.Any(x => !x.HasImage(ImageType.Primary, 0)),
+                MissingPosterIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Primary, 0)),
+                MissingBanner = regularSeasons.Any(x => !x.HasImage(ImageType.Banner, 0)),
+                MissingBannerIncludingSpecials = seasons.Any(x => !x.HasImage(ImageType.Banner, 0)),
+                Seasons = includeSeasons ? seasons.OrderBy(x => x.IndexNumber).Select(x => new SeasonSummary { Id = x.GetClientId(), Name = x.Name, Number = x.IndexNumber, CurrentPoster = x.HasImage(ImageType.Primary, 0), CurrentBanner = x.HasImage(ImageType.Banner, 0), CurrentPosterTag = ImageTag(x, ImageType.Primary), CurrentBannerTag = ImageTag(x, ImageType.Banner) }).ToList() : null
+            };
         }
 
         private Season[] GetSeasons(Series series) { return library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { typeof(Season).Name }, AncestorIds = new[] { series.InternalId }, Recursive = true }).OfType<Season>().ToArray(); }
