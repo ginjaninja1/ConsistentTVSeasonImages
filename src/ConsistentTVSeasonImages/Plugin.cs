@@ -28,7 +28,7 @@ namespace ConsistentTVSeasonImages
         public static ILogger Logger { get; private set; }
         public override string Description => "Discovers, compares and applies consistent poster and banner artwork across TV seasons.";
         public override Guid Id => new Guid("19272eb3-a556-4ae3-80b2-ce78f8ce7958");
-        public override string Name => "Consistent TV Season Images";
+        public override string Name => "Consistent Season Images";
         public ImageFormat ThumbImageFormat => ImageFormat.Png;
         public Stream GetThumbImage() => GetType().Assembly.GetManifestResourceStream(GetType().Namespace + ".thumb.png");
 
