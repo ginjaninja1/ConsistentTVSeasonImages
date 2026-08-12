@@ -108,7 +108,7 @@ namespace ConsistentTVSeasonImages.Services
                 foreach (var item in excluded) logger.Debug("Discover excluded non-library series. Name={0}, Id={1}, Path={2}, ExternalId={3}", item.Name, item.GetClientId(), item.Path ?? "(null)", item.ExternalId ?? "(null)");
                 var candidates = queried.Where(s => !string.IsNullOrEmpty(s.Path) && string.IsNullOrEmpty(s.ExternalId) && s.Name.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
                 ILookup<string, Season> seasonsBySeries = null;
-                if (filter != "all")
+                if (filter != "all" && filter != "ignored")
                 {
                     seasonsBySeries = library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { typeof(Season).Name }, Recursive = true }).OfType<Season>()
                         .ToLookup(x => x.SeriesId.ToString(CultureInfo.InvariantCulture), StringComparer.OrdinalIgnoreCase);
